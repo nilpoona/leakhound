@@ -69,37 +69,6 @@ leakhound ./...
 leakhound ./internal/...
 ```
 
-## Integration with golangci-lint
-
-### Method 1: Add as a custom linter (Recommended)
-
-`.golangci.yml`:
-
-```yaml
-linters-settings:
-  custom:
-    leakhound:
-      path: ./plugin/leakhound.so
-      description: Detects sensitive data leaks in logging code
-      original-url: github.com/yourname/leakhound
-
-linters:
-  enable:
-    - leakhound
-```
-
-Build the plugin:
-
-```bash
-cd plugin
-go build -buildmode=plugin -o leakhound.so plugin.go
-```
-
-Run:
-
-```bash
-golangci-lint run
-```
 
 ## Design Philosophy
 
@@ -112,7 +81,6 @@ golangci-lint run
   - ✅ **Preventative**: Find issues at the code review stage.
   - ✅ **Zero runtime cost**: No performance impact during execution.
   - ✅ **Reliable prevention**: Blocks sensitive data before it can be logged.
-  - ✅ **Educational**: Helps developers consciously learn about security.
 
 ## Supported Logging Libraries
 
