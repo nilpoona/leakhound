@@ -149,47 +149,87 @@ func isSlogCall(call *ast.CallExpr, pass *analysis.Pass) bool {
 		funcName == "Log" || funcName == "LogAttrs"
 }
 
+// hasAnySensitiveFields checks if a struct type has any fields with sensitive tags
+func hasAnySensitiveFields(typeName string, sensitiveFields map[sensitiveField]bool) bool {
+	for sf := range sensitiveFields {
+		if sf.typeName == typeName {
+			return true
+		}
+	}
+	return false
+}
+
 // checkArgForSensitiveFields checks if the argument contains sensitive fields
 func checkArgForSensitiveFields(pass *analysis.Pass, arg ast.Expr, sensitiveFields map[sensitiveField]bool) {
-	ast.Inspect(arg, func(n ast.Node) bool {
-		sel, ok := n.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-
-		// Get the type of field access
-		tv, ok := pass.TypesInfo.Types[sel.X]
-		if !ok {
-			return true
-		}
-
-		// Get element type if it's a pointer type
+	// First check if the argument itself is a struct with sensitive fields
+	if tv, ok := pass.TypesInfo.Types[arg]; ok {
 		typ := tv.Type
+		// Get element type if it's a pointer type
 		if ptr, ok := typ.(*types.Pointer); ok {
 			typ = ptr.Elem()
 		}
 
-		// Case for struct type
-		named, ok := typ.(*types.Named)
-		if !ok {
-			return true
+		// Check if the entire struct has sensitive fields
+		if named, ok := typ.(*types.Named); ok {
+			typeName := named.Obj().Name()
+			if hasAnySensitiveFields(typeName, sensitiveFields) {
+				pass.Reportf(arg.Pos(),
+					"struct '%s' contains sensitive fields and should not be logged entirely",
+					typeName)
+				return
+			}
 		}
+	}
 
-		typeName := named.Obj().Name()
-		fieldName := sel.Sel.Name
-
-		// Check if it has a sensitive tag
-		sf := sensitiveField{
-			typeName:  typeName,
-			fieldName: fieldName,
+	// Then check for field access within the argument (including nested function calls)
+	ast.Inspect(arg, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.SelectorExpr:
+			// Handle field access like config.Secret
+			checkFieldAccess(pass, node, sensitiveFields)
+		case *ast.CallExpr:
+			// Handle function calls like slog.Any("data", config)
+			for _, callArg := range node.Args {
+				checkArgForSensitiveFields(pass, callArg, sensitiveFields)
+			}
+			return false // Don't traverse into call expr again
 		}
-
-		if sensitiveFields[sf] {
-			pass.Reportf(sel.Pos(),
-				"sensitive field '%s.%s' should not be logged (tagged with sensitive:\"true\")",
-				typeName, fieldName)
-		}
-
 		return true
 	})
+}
+
+// checkFieldAccess checks if a selector expression accesses a sensitive field
+func checkFieldAccess(pass *analysis.Pass, sel *ast.SelectorExpr, sensitiveFields map[sensitiveField]bool) {
+	// Get the type of field access
+	tv, ok := pass.TypesInfo.Types[sel.X]
+	if !ok {
+		return
+	}
+
+	// Get element type if it's a pointer type
+	typ := tv.Type
+	if ptr, ok := typ.(*types.Pointer); ok {
+		typ = ptr.Elem()
+	}
+
+	// Case for struct type
+	named, ok := typ.(*types.Named)
+	if !ok {
+		return
+	}
+
+	typeName := named.Obj().Name()
+	fieldName := sel.Sel.Name
+
+	// Check if it has a sensitive tag
+	sf := sensitiveField{
+		typeName:  typeName,
+		fieldName: fieldName,
+	}
+
+	if sensitiveFields[sf] {
+		pass.Reportf(sel.Pos(),
+			"sensitive field '%s.%s' should not be logged (tagged with sensitive:\"true\")",
+			typeName, fieldName)
+	}
 }
