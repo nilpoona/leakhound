@@ -122,6 +122,10 @@ slog.Info("msg", slog.String("pass", user.Password))
 // ✅ Via a pointer
 userPtr := &user
 slog.Info("msg", "pass", userPtr.Password)
+
+// ✅ Entire struct containing sensitive fields
+slog.Info("user data", user)                    // Detects if user has sensitive fields
+slog.Info("user data", slog.Any("data", user))  // Also detects in nested function calls
 ```
 
 ## License
