@@ -16,5 +16,8 @@ func main() {
 	}
 
 	slog.Info("env", config.Env)
-	slog.Info("secret", config.Secret) // want "sensitive field 'Config.Secret' should not be logged"
+	slog.Info("secret", config.Secret)                        // want "sensitive field 'Config.Secret' should not be logged"
+	slog.Info("secret", slog.String("config", config.Secret)) // want "sensitive field 'Config.Secret' should not be logged"
+	slog.Info("secretPtr", &config.Secret)                    // want "sensitive field 'Config.Secret' should not be logged"
+
 }
