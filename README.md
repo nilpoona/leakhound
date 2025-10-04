@@ -34,7 +34,7 @@ go build -buildmode=plugin -o leakhound.so
 
 ## Usage
 
-### 1\. Tag sensitive fields
+### 1. Tag sensitive fields
 
 ```go
 package main
@@ -57,7 +57,7 @@ type Config struct {
 }
 ```
 
-### 2\. Run static analysis
+### 2. Run static analysis
 
 #### Run as a CLI tool
 
