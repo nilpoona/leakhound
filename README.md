@@ -21,17 +21,6 @@ Like a bloodhound sniffing out leaks, it tracks down potential data leakage risk
 go install github.com/yourname/leakhound@latest
 ```
 
-### As a golangci-lint plugin
-
-```bash
-# Build the plugin
-cd plugin
-go build -buildmode=plugin -o leakhound.so
-
-# Add to .golangci.yml
-# (Details below)
-```
-
 ## Usage
 
 ### 1. Tag sensitive fields
