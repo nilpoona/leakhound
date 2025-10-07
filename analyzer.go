@@ -136,7 +136,13 @@ func isSlogCall(call *ast.CallExpr, pass *analysis.Pass) bool {
 	}
 
 	pkg := fn.Pkg()
-	if pkg == nil || pkg.Path() != "log/slog" {
+	// Add nil check for package to handle build constraint issues
+	if pkg == nil {
+		return false
+	}
+
+	// Safely get package path
+	if pkg.Path() != "log/slog" {
 		return false
 	}
 
@@ -171,7 +177,12 @@ func checkArgForSensitiveFields(pass *analysis.Pass, arg ast.Expr, sensitiveFiel
 
 		// Check if the entire struct has sensitive fields
 		if named, ok := typ.(*types.Named); ok {
-			typeName := named.Obj().Name()
+			// Add nil check for named type object to handle build constraint issues
+			obj := named.Obj()
+			if obj == nil {
+				return
+			}
+			typeName := obj.Name()
 			if hasAnySensitiveFields(typeName, sensitiveFields) {
 				pass.Reportf(arg.Pos(),
 					"struct '%s' contains sensitive fields and should not be logged entirely",
@@ -218,7 +229,13 @@ func checkFieldAccess(pass *analysis.Pass, sel *ast.SelectorExpr, sensitiveField
 		return
 	}
 
-	typeName := named.Obj().Name()
+	// Add nil check for named type object to handle build constraint issues
+	obj := named.Obj()
+	if obj == nil {
+		return
+	}
+
+	typeName := obj.Name()
 	fieldName := sel.Sel.Name
 
 	// Check if it has a sensitive tag

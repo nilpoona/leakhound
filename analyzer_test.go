@@ -11,6 +11,7 @@ func Test(t *testing.T) {
 	testdata := analysistest.TestData()
 	patterns := []string{
 		"sensitive",
+		"buildconstraint",
 	}
 
 	for _, pattern := range patterns {
