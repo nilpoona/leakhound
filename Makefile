@@ -1,7 +1,7 @@
 .PHONY: build test install clean
 
 build:
-	go build -o bin/leakhound main.go
+	go build -o bin/leakhound cmd/leakhound/main.go
 
 test:
 	go test -cover -v ./...
