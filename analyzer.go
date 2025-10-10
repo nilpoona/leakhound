@@ -165,6 +165,11 @@ func hasAnySensitiveFields(typeName string, sensitiveFields map[sensitiveField]b
 	return false
 }
 
+// hasAnySensitiveFieldsFromType checks if a struct type has any sensitive fields using type info
+func hasAnySensitiveFieldsFromType(pass *analysis.Pass, named *types.Named) bool {
+	return checkStructForSensitiveFields(pass, named)
+}
+
 // checkArgForSensitiveFields checks if the argument contains sensitive fields
 func checkArgForSensitiveFields(pass *analysis.Pass, arg ast.Expr, sensitiveFields map[sensitiveField]bool) {
 	// First check if the argument itself is a struct with sensitive fields
@@ -183,7 +188,17 @@ func checkArgForSensitiveFields(pass *analysis.Pass, arg ast.Expr, sensitiveFiel
 				return
 			}
 			typeName := obj.Name()
+
+			// Check local cache first
 			if hasAnySensitiveFields(typeName, sensitiveFields) {
+				pass.Reportf(arg.Pos(),
+					"struct '%s' contains sensitive fields and should not be logged entirely",
+					typeName)
+				return
+			}
+
+			// If not found in local cache, check using type info
+			if hasAnySensitiveFieldsFromType(pass, named) {
 				pass.Reportf(arg.Pos(),
 					"struct '%s' contains sensitive fields and should not be logged entirely",
 					typeName)
@@ -238,7 +253,7 @@ func checkFieldAccess(pass *analysis.Pass, sel *ast.SelectorExpr, sensitiveField
 	typeName := obj.Name()
 	fieldName := sel.Sel.Name
 
-	// Check if it has a sensitive tag
+	// First check local sensitive fields cache
 	sf := sensitiveField{
 		typeName:  typeName,
 		fieldName: fieldName,
@@ -248,5 +263,53 @@ func checkFieldAccess(pass *analysis.Pass, sel *ast.SelectorExpr, sensitiveField
 		pass.Reportf(sel.Pos(),
 			"sensitive field '%s.%s' should not be logged (tagged with sensitive:\"true\")",
 			typeName, fieldName)
+		return
 	}
+
+	// If not found in local cache, check the actual struct definition using type info
+	if checkSensitiveFieldFromTypeInfo(pass, named, fieldName) {
+		pass.Reportf(sel.Pos(),
+			"sensitive field '%s.%s' should not be logged (tagged with sensitive:\"true\")",
+			typeName, fieldName)
+	}
+}
+
+// checkSensitiveFieldFromTypeInfo checks if a field has sensitive tag using type information
+func checkSensitiveFieldFromTypeInfo(pass *analysis.Pass, named *types.Named, fieldName string) bool {
+	// Get the underlying struct type
+	underlying, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+
+	// Find the field
+	for i := 0; i < underlying.NumFields(); i++ {
+		field := underlying.Field(i)
+		if field.Name() == fieldName {
+			// Get the struct tag
+			tag := underlying.Tag(i)
+			return hasSensitiveTag(tag)
+		}
+	}
+
+	return false
+}
+
+// checkStructForSensitiveFields checks if a struct type has any sensitive fields using type info
+func checkStructForSensitiveFields(pass *analysis.Pass, named *types.Named) bool {
+	// Get the underlying struct type
+	underlying, ok := named.Underlying().(*types.Struct)
+	if !ok {
+		return false
+	}
+
+	// Check all fields for sensitive tags
+	for i := 0; i < underlying.NumFields(); i++ {
+		tag := underlying.Tag(i)
+		if hasSensitiveTag(tag) {
+			return true
+		}
+	}
+
+	return false
 }

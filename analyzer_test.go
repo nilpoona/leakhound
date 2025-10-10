@@ -12,6 +12,7 @@ func Test(t *testing.T) {
 	patterns := []string{
 		"sensitive",
 		"buildconstraint",
+		"crosspackage",
 	}
 
 	for _, pattern := range patterns {
