@@ -64,6 +64,8 @@ leakhound ./internal/...
 Currently supported logging libraries:
   - ✅ `log/slog` (Go 1.21+)
   - ✅ `*slog.Logger` type custom loggers
+  - ✅ `log` (standard log package)
+  - ✅ `*log.Logger` type custom loggers
   - ✅ `fmt` (Printf, Println, Print, etc.)
 
 ## Limitations
@@ -122,6 +124,37 @@ logger.LogAttrs(ctx, slog.LevelInfo, "msg", slog.String("pass", user.Password))
 
 // ✅ With method chaining (edge case)
 logger.With("key", "val").Info("config", config)  // Detects even after With()
+```
+
+#### log package (including *log.Logger type)
+```go
+// ✅ Direct field access
+log.Print("secret:", user.Password)
+log.Printf("secret: %s", user.Password)
+log.Println("secret:", user.Password)
+customLogger.Print("token:", config.Token)  // customLogger is *log.Logger
+
+// ✅ All log package functions
+log.Fatal("secret:", user.Password)
+log.Fatalf("secret: %s", user.Password)
+log.Fatalln("secret:", user.Password)
+log.Panic("secret:", user.Password)
+log.Panicf("secret: %s", user.Password)
+log.Panicln("secret:", user.Password)
+
+// ✅ Entire struct containing sensitive fields
+log.Print("config:", config)              // Detects if config has sensitive fields
+log.Printf("config: %+v", config)         // Detects with format verbs
+customLogger.Println("user:", user)       // *log.Logger detects struct with sensitive fields
+
+// ✅ All *log.Logger methods
+customLogger.Fatal("secret:", user.Password)
+customLogger.Fatalf("secret: %s", user.Password)
+customLogger.Fatalln("secret:", user.Password)
+customLogger.Panic("secret:", user.Password)
+customLogger.Panicf("secret: %s", user.Password)
+customLogger.Panicln("secret:", user.Password)
+customLogger.Output(2, user.Password)
 ```
 
 #### fmt package

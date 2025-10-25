@@ -5,6 +5,7 @@ import (
 
 	"github.com/nilpoona/leakhound/detector"
 	"github.com/nilpoona/leakhound/fmtchecker"
+	"github.com/nilpoona/leakhound/logchecker"
 	"github.com/nilpoona/leakhound/slogchecker"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -48,7 +49,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 		call := n.(*ast.CallExpr)
 
 		if !slogchecker.IsSlogCall(call, pass) &&
-			!fmtchecker.IsFmtCall(call, pass) {
+			!fmtchecker.IsFmtCall(call, pass) &&
+			!logchecker.IsLogCall(call, pass) {
 			return
 		}
 
