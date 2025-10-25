@@ -63,7 +63,7 @@ leakhound ./internal/...
 ## Supported Logging Libraries
 Currently supported logging libraries:
   - ✅ `log/slog` (Go 1.21+)
-  - ✅ Custom loggers with slog-compatible method signatures
+  - ✅ `*slog.Logger` type custom loggers
   - ✅ `fmt` (Printf, Println, Print, etc.)
 
 ## Limitations
@@ -91,11 +91,11 @@ fmt.Println(data)
 
 ### Cases that can be detected
 
-#### slog package (including custom loggers)
+#### slog package (including *slog.Logger type)
 ```go
 // ✅ Direct field access
 slog.Info("msg", "pass", user.Password)
-logger.Info("msg", "pass", user.Password)  // Custom logger with Info method
+logger.Info("msg", "pass", user.Password)  // logger is *slog.Logger
 
 // ✅ When wrapped by slog.String, etc.
 slog.Info("msg", slog.String("pass", user.Password))
@@ -107,9 +107,9 @@ slog.Info("msg", "pass", userPtr.Password)
 // ✅ Entire struct containing sensitive fields
 slog.Info("user data", user)                    // Detects if user has sensitive fields
 slog.Info("user data", slog.Any("data", user))  // Also detects in nested function calls
-logger.Error("config", config)                  // Custom logger detects struct with sensitive fields
+logger.Error("config", config)                  // *slog.Logger detects struct with sensitive fields
 
-// ✅ All slog-style method signatures (custom loggers too)
+// ✅ All *slog.Logger methods
 logger.Debug("msg", "secret", user.Password)
 logger.Error("msg", "secret", user.Password)
 logger.Warn("msg", "secret", user.Password)
@@ -119,6 +119,9 @@ logger.WarnContext(ctx, "msg", "secret", user.Password)
 logger.DebugContext(ctx, "msg", "secret", user.Password)
 logger.Log(ctx, slog.LevelInfo, "msg", "secret", user.Password)
 logger.LogAttrs(ctx, slog.LevelInfo, "msg", slog.String("pass", user.Password))
+
+// ✅ With method chaining (edge case)
+logger.With("key", "val").Info("config", config)  // Detects even after With()
 ```
 
 #### fmt package

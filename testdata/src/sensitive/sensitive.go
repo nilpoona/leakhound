@@ -17,55 +17,8 @@ type SafeConfig struct {
 	Mode string
 }
 
-// CustomLogger is a custom logger wrapper for testing custom logger detection
-type CustomLogger struct {
-	logger *slog.Logger
-}
-
-func NewCustomLogger() *CustomLogger {
-	return &CustomLogger{
-		logger: slog.New(slog.NewTextHandler(os.Stdout, nil)),
-	}
-}
-
-func (l *CustomLogger) Debug(msg string, args ...any) {
-	l.logger.Debug(msg, args...)
-}
-
-func (l *CustomLogger) DebugContext(ctx context.Context, msg string, args ...any) {
-	l.logger.DebugContext(ctx, msg, args...)
-}
-
-func (l *CustomLogger) Error(msg string, args ...any) {
-	l.logger.Error(msg, args...)
-}
-
-func (l *CustomLogger) ErrorContext(ctx context.Context, msg string, args ...any) {
-	l.logger.ErrorContext(ctx, msg, args...)
-}
-
-func (l *CustomLogger) Info(msg string, args ...any) {
-	l.logger.Info(msg, args...)
-}
-
-func (l *CustomLogger) InfoContext(ctx context.Context, msg string, args ...any) {
-	l.logger.InfoContext(ctx, msg, args...)
-}
-
-func (l *CustomLogger) Warn(msg string, args ...any) {
-	l.logger.Warn(msg, args...)
-}
-
-func (l *CustomLogger) WarnContext(ctx context.Context, msg string, args ...any) {
-	l.logger.WarnContext(ctx, msg, args...)
-}
-
-func (l *CustomLogger) Log(ctx context.Context, level slog.Level, msg string, args ...any) {
-	l.logger.Log(ctx, level, msg, args...)
-}
-
-func (l *CustomLogger) LogAttrs(ctx context.Context, level slog.Level, msg string, attrs ...slog.Attr) {
-	l.logger.LogAttrs(ctx, level, msg, attrs...)
+func NewCustomLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stdout, nil))
 }
 
 func main() {
@@ -109,26 +62,27 @@ func main() {
 	logger := NewCustomLogger()
 
 	// Custom logger - direct field access (should be detected)
-	logger.Info("secret", config.Secret)                        // want "sensitive field 'Config.Secret' should not be logged"
-	logger.Error("secret", config.Secret)                       // want "sensitive field 'Config.Secret' should not be logged"
-	logger.Warn("secret", config.Secret)                        // want "sensitive field 'Config.Secret' should not be logged"
-	logger.Debug("secret", config.Secret)                       // want "sensitive field 'Config.Secret' should not be logged"
-	logger.InfoContext(ctx, "secret", config.Secret)            // want "sensitive field 'Config.Secret' should not be logged"
-	logger.ErrorContext(ctx, "secret", config.Secret)           // want "sensitive field 'Config.Secret' should not be logged"
-	logger.WarnContext(ctx, "secret", config.Secret)            // want "sensitive field 'Config.Secret' should not be logged"
-	logger.DebugContext(ctx, "secret", config.Secret)           // want "sensitive field 'Config.Secret' should not be logged"
-	logger.Log(ctx, slog.LevelInfo, "secret", config.Secret)    // want "sensitive field 'Config.Secret' should not be logged"
+	logger.Info("secret", config.Secret)                                              // want "sensitive field 'Config.Secret' should not be logged"
+	logger.Error("secret", config.Secret)                                             // want "sensitive field 'Config.Secret' should not be logged"
+	logger.Warn("secret", config.Secret)                                              // want "sensitive field 'Config.Secret' should not be logged"
+	logger.Debug("secret", config.Secret)                                             // want "sensitive field 'Config.Secret' should not be logged"
+	logger.InfoContext(ctx, "secret", config.Secret)                                  // want "sensitive field 'Config.Secret' should not be logged"
+	logger.ErrorContext(ctx, "secret", config.Secret)                                 // want "sensitive field 'Config.Secret' should not be logged"
+	logger.WarnContext(ctx, "secret", config.Secret)                                  // want "sensitive field 'Config.Secret' should not be logged"
+	logger.DebugContext(ctx, "secret", config.Secret)                                 // want "sensitive field 'Config.Secret' should not be logged"
+	logger.Log(ctx, slog.LevelInfo, "secret", config.Secret)                          // want "sensitive field 'Config.Secret' should not be logged"
 	logger.LogAttrs(ctx, slog.LevelInfo, "secret", slog.String("key", config.Secret)) // want "sensitive field 'Config.Secret' should not be logged"
 
 	// Custom logger - entire struct (should be detected)
-	logger.Info("config", config)                               // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	logger.Error("config", config)                              // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	logger.Warn("config", config)                               // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	logger.Debug("config", config)                              // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	logger.InfoContext(ctx, "config", config)                   // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	logger.ErrorContext(ctx, "config", config)                  // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	logger.WarnContext(ctx, "config", config)                   // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	logger.DebugContext(ctx, "config", config)                  // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.Info("config", config)                       // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.With("key", "val").Info("config", config)    // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.Error("config", config)                      // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.Warn("config", config)                       // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.Debug("config", config)                      // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.InfoContext(ctx, "config", config)           // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.ErrorContext(ctx, "config", config)          // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.WarnContext(ctx, "config", config)           // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	logger.DebugContext(ctx, "config", config)          // want "struct 'Config' contains sensitive fields and should not be logged entirely"
 
 	// Custom logger - safe config (should NOT be detected)
 	logger.Info("safe", safeConfig)
