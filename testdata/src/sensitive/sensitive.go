@@ -49,9 +49,16 @@ func main() {
 	fmt.Println("secret:", config.Secret)               // want "sensitive field 'Config.Secret' should not be logged"
 
 	// Test struct with sensitive fields passed entirely
-	slog.Info("config", config)                   // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	slog.Info("config", slog.Any("data", config)) // want "struct 'Config' contains sensitive fields and should not be logged entirely"
-	fmt.Println("config:", config)                // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.Info("config", config)                               // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.InfoContext(context.Background(), "config", config)  // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.Debug("config", config)                              // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.DebugContext(context.Background(), "config", config) // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.Warn("config", config)                               // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.WarnContext(context.Background(), "config", config)  // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.Error("config", config)                              // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.ErrorContext(context.Background(), "config", config) // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	slog.Info("config", slog.Any("data", config))             // want "struct 'Config' contains sensitive fields and should not be logged entirely"
+	fmt.Println("config:", config)                            // want "struct 'Config' contains sensitive fields and should not be logged entirely"
 
 	// Safe struct should not trigger warnings
 	slog.Info("safe", safeConfig)
