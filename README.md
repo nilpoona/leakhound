@@ -51,6 +51,26 @@ leakhound ./...
 leakhound ./internal/...
 ```
 
+### 3. Nested struct support
+`leakhound` can also detect sensitive fields in nested/embedded structs:
+
+```go
+type Config struct {
+    Secret string `sensitive:"true"`
+}
+
+type WrapConfig struct {
+    Config  // Embedded struct with sensitive field
+    Description string
+}
+
+wrapConfig := WrapConfig{...}
+
+// ✅ Both cases will be detected
+slog.Info("wrapConfig", wrapConfig)              // Detects embedded sensitive fields
+slog.Info("secret", wrapConfig.Config.Secret)    // Detects nested field access
+```
+
 ## Design Philosophy
 ### Why static analysis?
 `leakhound` uses **static analysis** rather than **runtime masking**.
@@ -124,6 +144,14 @@ logger.LogAttrs(ctx, slog.LevelInfo, "msg", slog.String("pass", user.Password))
 
 // ✅ With method chaining (edge case)
 logger.With("key", "val").Info("config", config)  // Detects even after With()
+
+// ✅ Nested/embedded structs with sensitive fields
+type WrapConfig struct {
+    Config  // Embedded struct with sensitive field
+}
+wrapConfig := WrapConfig{...}
+slog.Info("wrapConfig", wrapConfig)              // Detects embedded sensitive fields
+slog.Info("secret", wrapConfig.Config.Secret)    // Detects nested field access
 ```
 
 #### log package (including *log.Logger type)
@@ -155,6 +183,14 @@ customLogger.Panic("secret:", user.Password)
 customLogger.Panicf("secret: %s", user.Password)
 customLogger.Panicln("secret:", user.Password)
 customLogger.Output(2, user.Password)
+
+// ✅ Nested/embedded structs with sensitive fields
+type WrapConfig struct {
+    Config  // Embedded struct with sensitive field
+}
+wrapConfig := WrapConfig{...}
+log.Print("wrapConfig:", wrapConfig)             // Detects embedded sensitive fields
+log.Println("secret:", wrapConfig.Config.Secret) // Detects nested field access
 ```
 
 #### fmt package
@@ -175,6 +211,14 @@ fmt.Printf("%#v", config)   // Detects with any format
 
 // ✅ Multiple arguments
 fmt.Println("User:", user.Name, "Pass:", user.Password)  // Detects Password
+
+// ✅ Nested/embedded structs with sensitive fields
+type WrapConfig struct {
+    Config  // Embedded struct with sensitive field
+}
+wrapConfig := WrapConfig{...}
+fmt.Println("wrapConfig:", wrapConfig)             // Detects embedded sensitive fields
+fmt.Printf("secret: %s", wrapConfig.Config.Secret) // Detects nested field access
 ```
 
 ## Example Detection Output

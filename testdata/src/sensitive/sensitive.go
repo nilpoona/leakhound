@@ -18,6 +18,18 @@ type SafeConfig struct {
 	Mode string
 }
 
+// WrapConfig embeds Config which contains sensitive fields
+type WrapConfig struct {
+	Config
+	Description string
+}
+
+// NestedSafeConfig embeds SafeConfig which has no sensitive fields
+type NestedSafeConfig struct {
+	SafeConfig
+	Extra string
+}
+
 func NewCustomLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stdout, nil))
 }
@@ -139,4 +151,61 @@ func main() {
 	log.Println("safe:", safeConfig)
 	customLog.Print("safe:", safeConfig)
 	customLog.Println("safe:", safeConfig)
+
+	// Nested struct tests
+	wrapConfig := WrapConfig{
+		Config:      config,
+		Description: "wrapped config",
+	}
+
+	nestedSafeConfig := NestedSafeConfig{
+		SafeConfig: safeConfig,
+		Extra:      "extra info",
+	}
+
+	// Test nested struct with embedded sensitive struct - slog package
+	slog.Info("wrapConfig", wrapConfig)                               // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	slog.Info("wrapConfig.secret", wrapConfig.Config.Secret)          // want "sensitive field 'Config.Secret' should not be logged"
+	slog.Info("wrapConfig", slog.Any("data", wrapConfig))             // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	slog.InfoContext(context.Background(), "wrapConfig", wrapConfig)  // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	slog.Debug("wrapConfig", wrapConfig)                              // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	slog.DebugContext(context.Background(), "wrapConfig", wrapConfig) // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	slog.Warn("wrapConfig", wrapConfig)                               // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	slog.WarnContext(context.Background(), "wrapConfig", wrapConfig)  // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	slog.Error("wrapConfig", wrapConfig)                              // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	slog.ErrorContext(context.Background(), "wrapConfig", wrapConfig) // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+
+	// Test nested struct with embedded sensitive struct - fmt package
+	fmt.Println("wrapConfig:", wrapConfig)              // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Printf("wrapConfig: %+v", wrapConfig)           // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Print("wrapConfig:", wrapConfig)                // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Fprint(os.Stdout, "wrapConfig:", wrapConfig)    // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Fprintf(os.Stdout, "wrapConfig: %+v", wrapConfig) // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Fprintln(os.Stdout, "wrapConfig:", wrapConfig)  // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Println("nested secret:", wrapConfig.Config.Secret) // want "sensitive field 'Config.Secret' should not be logged"
+
+	// Test nested struct with embedded sensitive struct - log package
+	log.Print("wrapConfig:", wrapConfig)              // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	log.Printf("wrapConfig: %+v", wrapConfig)         // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	log.Println("wrapConfig:", wrapConfig)            // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	customLog.Print("wrapConfig:", wrapConfig)        // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	customLog.Printf("wrapConfig: %+v", wrapConfig)   // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	customLog.Println("wrapConfig:", wrapConfig)      // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	log.Println("nested secret:", wrapConfig.Config.Secret) // want "sensitive field 'Config.Secret' should not be logged"
+
+	// Test nested struct with custom *slog.Logger
+	logger.Info("wrapConfig", wrapConfig)                    // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	logger.Error("wrapConfig", wrapConfig)                   // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	logger.Warn("wrapConfig", wrapConfig)                    // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	logger.Debug("wrapConfig", wrapConfig)                   // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	logger.InfoContext(ctx, "wrapConfig", wrapConfig)        // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	logger.With("key", "val").Info("wrapConfig", wrapConfig) // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	logger.Info("nested secret", wrapConfig.Config.Secret)   // want "sensitive field 'Config.Secret' should not be logged"
+
+	// Test nested safe struct (should NOT be detected)
+	slog.Info("nestedSafe", nestedSafeConfig)
+	fmt.Println("nestedSafe:", nestedSafeConfig)
+	log.Println("nestedSafe:", nestedSafeConfig)
+	logger.Info("nestedSafe", nestedSafeConfig)
+	customLog.Println("nestedSafe:", nestedSafeConfig)
 }
