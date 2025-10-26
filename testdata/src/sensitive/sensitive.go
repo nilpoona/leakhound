@@ -176,21 +176,21 @@ func main() {
 	slog.ErrorContext(context.Background(), "wrapConfig", wrapConfig) // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
 
 	// Test nested struct with embedded sensitive struct - fmt package
-	fmt.Println("wrapConfig:", wrapConfig)              // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	fmt.Printf("wrapConfig: %+v", wrapConfig)           // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	fmt.Print("wrapConfig:", wrapConfig)                // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	fmt.Fprint(os.Stdout, "wrapConfig:", wrapConfig)    // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	fmt.Fprintf(os.Stdout, "wrapConfig: %+v", wrapConfig) // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	fmt.Fprintln(os.Stdout, "wrapConfig:", wrapConfig)  // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Println("wrapConfig:", wrapConfig)                  // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Printf("wrapConfig: %+v", wrapConfig)               // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Print("wrapConfig:", wrapConfig)                    // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Fprint(os.Stdout, "wrapConfig:", wrapConfig)        // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Fprintf(os.Stdout, "wrapConfig: %+v", wrapConfig)   // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	fmt.Fprintln(os.Stdout, "wrapConfig:", wrapConfig)      // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
 	fmt.Println("nested secret:", wrapConfig.Config.Secret) // want "sensitive field 'Config.Secret' should not be logged"
 
 	// Test nested struct with embedded sensitive struct - log package
-	log.Print("wrapConfig:", wrapConfig)              // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	log.Printf("wrapConfig: %+v", wrapConfig)         // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	log.Println("wrapConfig:", wrapConfig)            // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	customLog.Print("wrapConfig:", wrapConfig)        // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	customLog.Printf("wrapConfig: %+v", wrapConfig)   // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
-	customLog.Println("wrapConfig:", wrapConfig)      // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	log.Print("wrapConfig:", wrapConfig)                    // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	log.Printf("wrapConfig: %+v", wrapConfig)               // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	log.Println("wrapConfig:", wrapConfig)                  // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	customLog.Print("wrapConfig:", wrapConfig)              // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	customLog.Printf("wrapConfig: %+v", wrapConfig)         // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
+	customLog.Println("wrapConfig:", wrapConfig)            // want "struct 'WrapConfig' contains sensitive fields and should not be logged entirely"
 	log.Println("nested secret:", wrapConfig.Config.Secret) // want "sensitive field 'Config.Secret' should not be logged"
 
 	// Test nested struct with custom *slog.Logger
