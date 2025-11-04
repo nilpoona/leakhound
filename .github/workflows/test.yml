@@ -20,7 +20,10 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
-    
+   
+    - name: Set GOTOOLCHAIN
+      run: go env -w GOTOOLCHAIN=go${{ matrix.go-version }}+auto        
+
     - name: Download dependencies
       run: go mod download
     
