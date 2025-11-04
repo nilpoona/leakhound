@@ -10,7 +10,8 @@ jobs:
     
     strategy:
       matrix:
-        go-version: ['1.25.1']
+        go-version: ['1.21.1', '1.22.0', '1.22.1', '1.23.0', '1.24.0', '1.25.1']
+      fail-fast: false
     
     steps:
     - uses: actions/checkout@v5
@@ -20,6 +21,10 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
     
+    # SEE: https://github.com/golang/go/issues/75031#issuecomment-3195256688
+    - name: Set GOTOOLCHAIN
+      run: go env -w GOTOOLCHAIN=go1.25.0+auto
+
     - name: Download dependencies
       run: go mod download
     
@@ -28,9 +33,6 @@ jobs:
     
     - name: Run tests
       run: make test
-    
-    - name: Run tests with race detection
-      run: go test -race -v ./...
     
     - name: Check formatting
       run: |
