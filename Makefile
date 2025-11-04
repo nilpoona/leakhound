@@ -4,7 +4,7 @@ build:
 	go build -o bin/leakhound cmd/leakhound/main.go
 
 test:
-	go test -cover -v ./...
+	go test -race -cover -v ./...
 
 install:
 	go install
