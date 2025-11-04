@@ -20,7 +20,8 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: ${{ matrix.go-version }}
-   
+    
+    # SEE: https://github.com/golang/go/issues/75031#issuecomment-3195256688
     - name: Set GOTOOLCHAIN
       run: go env -w GOTOOLCHAIN=go1.25.0+auto
 
