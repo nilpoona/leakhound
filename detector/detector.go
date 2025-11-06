@@ -330,6 +330,9 @@ type DataFlowCollector struct {
 	sensitiveFuncs  map[types.Object]SensitiveSource // Functions that return sensitive values
 	sensitiveParams map[*types.Var]SensitiveSource   // Function parameters that receive sensitive values
 
+	// Log calls collected during traversal (for single-pass optimization)
+	logCalls []*ast.CallExpr
+
 	// Function definitions for parameter tracking
 	funcDefs map[types.Object]*ast.FuncDecl
 
@@ -348,6 +351,7 @@ func NewDataFlowCollector(pass *analysis.Pass) *DataFlowCollector {
 		sensitiveVars:   make(map[*types.Var]SensitiveSource),
 		sensitiveFuncs:  make(map[types.Object]SensitiveSource),
 		sensitiveParams: make(map[*types.Var]SensitiveSource),
+		logCalls:        make([]*ast.CallExpr, 0),
 		funcDefs:        make(map[types.Object]*ast.FuncDecl),
 		visitedFuncs:    make(map[types.Object]bool),
 	}
@@ -401,6 +405,11 @@ func (c *DataFlowCollector) collectFromFunction(funcDecl *ast.FuncDecl) {
 				c.collectAssignment(node)
 			case *ast.ReturnStmt:
 				c.collectReturn(node)
+			case *ast.CallExpr:
+				// Collect log calls during traversal (single-pass optimization)
+				if c.isLogCall(node) {
+					c.logCalls = append(c.logCalls, node)
+				}
 			}
 			return true
 		})
@@ -408,6 +417,141 @@ func (c *DataFlowCollector) collectFromFunction(funcDecl *ast.FuncDecl) {
 
 	// Reset current function context
 	c.currentFunc = nil
+}
+
+// isLogCall checks if a call expression is a logging function call
+// This consolidates checks for slog, log, and fmt packages
+func (c *DataFlowCollector) isLogCall(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+
+	// Use type information to accurately verify the call
+	obj := c.pass.TypesInfo.Uses[sel.Sel]
+	if obj == nil {
+		return false
+	}
+
+	fn, ok := obj.(*types.Func)
+	if !ok {
+		return false
+	}
+
+	pkg := fn.Pkg()
+	// Add nil check for package to handle build constraint issues
+	if pkg == nil {
+		return false
+	}
+
+	pkgPath := pkg.Path()
+	funcName := sel.Sel.Name
+
+	// Check for slog package calls
+	if pkgPath == "log/slog" {
+		return isSlogStyleMethod(funcName)
+	}
+
+	// Check for log package calls
+	if pkgPath == "log" {
+		return isLogStyleMethod(funcName)
+	}
+
+	// Check for fmt package calls
+	if pkgPath == "fmt" {
+		return isFmtStyleMethod(funcName)
+	}
+
+	// Check if this is a method on *slog.Logger type
+	if sig, ok := fn.Type().(*types.Signature); ok {
+		recv := sig.Recv()
+		if recv != nil {
+			if isSlogLoggerType(recv.Type()) && isSlogStyleMethod(funcName) {
+				return true
+			}
+			if isLogLoggerType(recv.Type()) && isLogStyleMethod(funcName) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// Helper functions for method name checking
+func isSlogStyleMethod(name string) bool {
+	return name == "Info" || name == "Error" ||
+		name == "Warn" || name == "Debug" ||
+		name == "InfoContext" || name == "ErrorContext" ||
+		name == "WarnContext" || name == "DebugContext" ||
+		name == "Log" || name == "LogAttrs"
+}
+
+func isLogStyleMethod(name string) bool {
+	return name == "Fatal" || name == "Fatalf" || name == "Fatalln" ||
+		name == "Panic" || name == "Panicf" || name == "Panicln" ||
+		name == "Print" || name == "Printf" || name == "Println" ||
+		name == "Output"
+}
+
+func isFmtStyleMethod(name string) bool {
+	return name == "Fprint" || name == "Fprintf" ||
+		name == "Fprintln" || name == "Print" ||
+		name == "Printf" || name == "Println"
+}
+
+func isSlogLoggerType(t types.Type) bool {
+	// Handle pointer type
+	ptr, ok := t.(*types.Pointer)
+	if !ok {
+		return false
+	}
+
+	// Get the underlying named type
+	named, ok := ptr.Elem().(*types.Named)
+	if !ok {
+		return false
+	}
+
+	// Check if it's slog.Logger
+	obj := named.Obj()
+	if obj == nil || obj.Name() != "Logger" {
+		return false
+	}
+
+	pkg := obj.Pkg()
+	if pkg == nil {
+		return false
+	}
+
+	return pkg.Path() == "log/slog"
+}
+
+func isLogLoggerType(t types.Type) bool {
+	// Handle pointer type
+	ptr, ok := t.(*types.Pointer)
+	if !ok {
+		return false
+	}
+
+	// Get the underlying named type
+	named, ok := ptr.Elem().(*types.Named)
+	if !ok {
+		return false
+	}
+
+	// Check if it's log.Logger
+	obj := named.Obj()
+	if obj == nil || obj.Name() != "Logger" {
+		return false
+	}
+
+	pkg := obj.Pkg()
+	if pkg == nil {
+		return false
+	}
+
+	return pkg.Path() == "log"
 }
 
 // collectSensitiveFields collects struct fields with sensitive tags
@@ -843,5 +987,17 @@ func (c *DataFlowCollector) checkFieldAccessWithCollector(sel *ast.SelectorExpr)
 		c.pass.Reportf(sel.Pos(),
 			"sensitive field '%s.%s' should not be logged (tagged with sensitive:\"true\")",
 			typeName, fieldName)
+	}
+}
+
+// AnalyzeAndReport processes all collected log calls and reports sensitive data leaks
+// This method implements Phase 2 of the Two-Phase Analysis Pattern
+func (c *DataFlowCollector) AnalyzeAndReport() {
+	// Process all collected log calls
+	for _, call := range c.logCalls {
+		// Inspect arguments for sensitive data
+		for _, arg := range call.Args {
+			c.CheckArgForSensitiveData(arg)
+		}
 	}
 }

@@ -1,15 +1,9 @@
 package leakhound
 
 import (
-	"go/ast"
-
 	"github.com/nilpoona/leakhound/detector"
-	"github.com/nilpoona/leakhound/fmtchecker"
-	"github.com/nilpoona/leakhound/logchecker"
-	"github.com/nilpoona/leakhound/slogchecker"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
 )
 
 const Doc = `leakhound detects whether fields tagged with sensitive are being output in slog.
@@ -35,31 +29,12 @@ var Analyzer = &analysis.Analyzer{
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
-
-	// Step 1: Collect all data flow information in a single pass
+	// Single-pass collection of all information (sensitive fields, data flow, log calls)
 	collector := detector.NewDataFlowCollector(pass)
 	collector.Collect()
 
-	// Step 2: Inspect logging calls and check for sensitive data
-	nodeFilter := []ast.Node{
-		(*ast.CallExpr)(nil),
-	}
-
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		call := n.(*ast.CallExpr)
-
-		if !slogchecker.IsSlogCall(call, pass) &&
-			!fmtchecker.IsFmtCall(call, pass) &&
-			!logchecker.IsLogCall(call, pass) {
-			return
-		}
-
-		// Inspect arguments for sensitive data
-		for _, arg := range call.Args {
-			collector.CheckArgForSensitiveData(arg)
-		}
-	})
+	// Analyze collected log calls and report sensitive data leaks
+	collector.AnalyzeAndReport()
 
 	return nil, nil
 }
