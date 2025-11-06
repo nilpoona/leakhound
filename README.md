@@ -4,10 +4,10 @@
 Like a bloodhound sniffing out leaks, it tracks down potential data leakage risks in your code.
 
 ## Features
-  - Detects if struct fields tagged with `sensitive:"true"` are being output by logging functions.
-  - Supports multiple logging packages: `log/slog` and `fmt`.
-  - Zero runtime overhead (static analysis only).
-  - Can be run automatically in CI/CD pipelines.
+  - **Data Flow Analysis**: Tracks sensitive data through variables, function parameters, and return values
+  - Detects if struct fields tagged with `sensitive:"true"` are being output by logging functions
+  - Supports multiple logging packages: `log/slog`, `log`, and `fmt`
+  - Zero runtime overhead (static analysis only)
 
 ## Installation
 ### As a CLI tool
@@ -88,27 +88,91 @@ Currently supported logging libraries:
   - ✅ `*log.Logger` type custom loggers
   - ✅ `fmt` (Printf, Println, Print, etc.)
 
+## Advanced Detection: Data Flow Tracking
+
+### Variable Assignments
+```go
+// ✅ Variable assignment tracking
+password := user.Password
+slog.Info("msg", "pass", password)  // Detected!
+log.Println("password:", password)  // Detected!
+fmt.Printf("secret: %s", password)  // Detected!
+```
+
+### Function Parameters (same package)
+```go
+// ✅ Function parameter tracking
+func logValue(val string) {
+    slog.Info("msg", val)  // Detected!
+}
+
+password := user.Password
+logValue(password)  // Tracks sensitive data through function call
+```
+
+### Nested Function Calls
+```go
+// ✅ Nested function call tracking 
+func inner(data string) {
+    log.Println(data)  // Detected!
+}
+
+func outer(val string) {
+    inner(val)  // Tracks through multiple levels
+}
+
+password := user.Password
+outer(password)  // Tracks up to 5 levels deep
+```
+
+### Return Values
+```go
+// ✅ Return value tracking
+func getPassword(user User) string {
+    return user.Password
+}
+
+// Direct use
+slog.Info("msg", getPassword(user))  // Detected!
+
+// Via variable
+password := getPassword(user)
+log.Println(password)  // Detected!
+```
+
 ## Limitations
 Due to the nature of static analysis, there are the following limitations:
 
 ### Cases that cannot be detected
 ```go
-// ❌ When passed through a function
-func logPassword(p string) {
-    slog.Info("msg", "pass", p)
-    fmt.Println("pass:", p)
+// ❌ Cross-package function calls (out of scope)
+import "github.com/external/pkg"
+password := user.Password
+pkg.ProcessData(password)  // Not tracked
+
+// ❌ Variadic arguments (out of scope)
+func logMultiple(vals ...string) {
+    for _, v := range vals {
+        slog.Info("msg", v)
+    }
 }
-logPassword(user.Password) // Difficult to detect
+password := user.Password
+logMultiple("safe", password)  // Not tracked
+
+// ❌ Multiple return values (not yet implemented)
+func getCredentials(user User) (string, string, error) {
+    return user.Name, user.Password, nil
+}
+name, password, err := getCredentials(user)
+slog.Info("msg", password)  // Position tracking not implemented
 
 // ❌ Via reflection
 val := reflect.ValueOf(user).FieldByName("Password")
 slog.Info("msg", "pass", val.Interface())
-fmt.Println(val.Interface())
 
 // ❌ Via an interface
 var data interface{} = user.Password
 slog.Info("msg", "pass", data)
-fmt.Println(data)
 ```
 
 ### Cases that can be detected
@@ -118,6 +182,11 @@ fmt.Println(data)
 // ✅ Direct field access
 slog.Info("msg", "pass", user.Password)
 logger.Info("msg", "pass", user.Password)  // logger is *slog.Logger
+
+// ✅ Variable assignments
+password := user.Password
+slog.Info("msg", "pass", password)  // Tracked!
+logger.Error("msg", "pass", password)  // Tracked!
 
 // ✅ When wrapped by slog.String, etc.
 slog.Info("msg", slog.String("pass", user.Password))
@@ -162,6 +231,11 @@ log.Printf("secret: %s", user.Password)
 log.Println("secret:", user.Password)
 customLogger.Print("token:", config.Token)  // customLogger is *log.Logger
 
+// ✅ Variable assignments
+p := user.Password
+log.Println("password:", p)  // Tracked!
+customLogger.Print("token:", p)  // Tracked!
+
 // ✅ All log package functions
 log.Fatal("secret:", user.Password)
 log.Fatalf("secret: %s", user.Password)
@@ -200,6 +274,10 @@ fmt.Println(user.Password)
 fmt.Printf("password: %s", user.Password)
 fmt.Print("token:", config.Token)
 
+// ✅ Variable assignments
+secret := config.APIKey
+fmt.Printf("key: %s", secret)  // Tracked!
+
 // ✅ Via a pointer
 userPtr := &user
 fmt.Println(userPtr.Password)
@@ -224,11 +302,13 @@ fmt.Printf("secret: %s", wrapConfig.Config.Secret) // Detects nested field acces
 ## Example Detection Output
 ```bash
 $ leakhound ./...
-./main.go:15:2: sensitive field "Password" should not be logged
-./main.go:18:2: sensitive field "APIKey" should not be logged
-./config.go:23:12: sensitive field "Token" should not be logged
-./user.go:10:14: struct "User" contains sensitive fields and should not be logged
+./main.go:15:2: sensitive field 'User.Password' should not be logged (tagged with sensitive:"true")
+./main.go:18:27: variable "password" contains sensitive field "User.Password" (tagged with sensitive:"true")
+./main.go:23:19: variable "val" contains sensitive field "User.Password" (tagged with sensitive:"true")
+./config.go:34:19: function call returns sensitive field "Config.APIKey" (tagged with sensitive:"true")
+./user.go:10:14: struct 'User' contains sensitive fields and should not be logged entirely
 ```
 
 ## License
+
 MIT License

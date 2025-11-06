@@ -37,10 +37,11 @@ var Analyzer = &analysis.Analyzer{
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
-	// Step 1: Collect fields with sensitive tags
-	sensitiveFields := detector.CollectSensitiveFields(pass)
+	// Step 1: Collect all data flow information in a single pass
+	collector := detector.NewDataFlowCollector(pass)
+	collector.Collect()
 
-	// Step 2: Inspect slog calls
+	// Step 2: Inspect logging calls and check for sensitive data
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
 	}
@@ -54,9 +55,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		// Inspect arguments
+		// Inspect arguments for sensitive data
 		for _, arg := range call.Args {
-			detector.CheckArgForSensitiveFields(pass, arg, sensitiveFields)
+			collector.CheckArgForSensitiveData(arg)
 		}
 	})
 

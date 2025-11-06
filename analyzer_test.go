@@ -13,6 +13,7 @@ func Test(t *testing.T) {
 		"sensitive",
 		"buildconstraint",
 		"crosspackage",
+		"dataflow",
 	}
 
 	for _, pattern := range patterns {
