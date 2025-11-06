@@ -338,7 +338,7 @@ func getPasswordNotUsed(user User) string {
 func testReturnValueNotUsed() {
 	// TC-112: Return value not used
 	user := User{Name: "victor", Password: "secretJKL2"}
-	getPasswordNotUsed(user) // Return value not used
+	getPasswordNotUsed(user)  // Return value not used
 	slog.Info("msg", "other") // Should NOT be detected
 }
 

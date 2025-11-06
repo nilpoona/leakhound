@@ -315,9 +315,9 @@ func checkStructForSensitiveFields(pass *analysis.Pass, named *types.Named, visi
 
 // SensitiveSource describes where a sensitive value came from
 type SensitiveSource struct {
-	FieldName string      // Original sensitive field name (e.g., "User.Password")
-	Position  token.Pos   // Position where the value was assigned/passed
-	FlowPath  []string    // Data flow path for nested tracking
+	FieldName string    // Original sensitive field name (e.g., "User.Password")
+	Position  token.Pos // Position where the value was assigned/passed
+	FlowPath  []string  // Data flow path for nested tracking
 }
 
 // DataFlowCollector collects data flow information in a single AST pass
@@ -325,10 +325,10 @@ type DataFlowCollector struct {
 	pass *analysis.Pass
 
 	// Collected information (minimal storage)
-	sensitiveFields map[sensitiveField]bool        // Sensitive fields from tags
-	sensitiveVars   map[*types.Var]SensitiveSource // Variables assigned from sensitive fields
+	sensitiveFields map[sensitiveField]bool          // Sensitive fields from tags
+	sensitiveVars   map[*types.Var]SensitiveSource   // Variables assigned from sensitive fields
 	sensitiveFuncs  map[types.Object]SensitiveSource // Functions that return sensitive values
-	sensitiveParams map[*types.Var]SensitiveSource // Function parameters that receive sensitive values
+	sensitiveParams map[*types.Var]SensitiveSource   // Function parameters that receive sensitive values
 
 	// Function definitions for parameter tracking
 	funcDefs map[types.Object]*ast.FuncDecl
