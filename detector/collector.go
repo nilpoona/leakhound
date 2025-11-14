@@ -18,6 +18,7 @@ type DataFlowCollector struct {
 	fieldCollector *FieldCollector
 	varTracker     *VarTracker
 	logDetector    *LogDetector
+	detector       *Detector
 	reporter       *Reporter
 
 	// Log calls collected during traversal (for single-pass optimization)
@@ -29,13 +30,15 @@ func NewDataFlowCollector(pass *analysis.Pass) *DataFlowCollector {
 	fieldCollector := NewFieldCollector(pass)
 	varTracker := NewVarTracker(pass, fieldCollector.GetSensitiveFields())
 	logDetector := NewLogDetector(pass)
-	reporter := NewReporter(pass, fieldCollector.GetSensitiveFields(), varTracker)
+	detector := NewDetector(pass, fieldCollector.GetSensitiveFields(), varTracker)
+	reporter := NewReporter(pass)
 
 	return &DataFlowCollector{
 		pass:           pass,
 		fieldCollector: fieldCollector,
 		varTracker:     varTracker,
 		logDetector:    logDetector,
+		detector:       detector,
 		reporter:       reporter,
 		logCalls:       make([]*ast.CallExpr, 0),
 	}
@@ -114,16 +117,23 @@ func (c *DataFlowCollector) collectFromFunction(funcDecl *ast.FuncDecl) {
 // AnalyzeAndReport processes all collected log calls and reports sensitive data leaks
 // This method implements Phase 2 of the Two-Phase Analysis Pattern
 func (c *DataFlowCollector) AnalyzeAndReport() {
-	// Re-initialize reporter with updated sensitive fields (after collection is complete)
-	c.reporter = NewReporter(c.pass, c.fieldCollector.GetSensitiveFields(), c.varTracker)
+	// Re-initialize detector with updated sensitive fields (after collection is complete)
+	c.detector = NewDetector(c.pass, c.fieldCollector.GetSensitiveFields(), c.varTracker)
+
+	// Collect all findings from log calls
+	var allFindings []Finding
 
 	// Process all collected log calls
 	for _, call := range c.logCalls {
 		// Inspect arguments for sensitive data
 		for _, arg := range call.Args {
-			c.reporter.CheckArgForSensitiveData(arg)
+			findings := c.detector.CheckArgForSensitiveData(arg)
+			allFindings = append(allFindings, findings...)
 		}
 	}
+
+	// Report all findings
+	c.reporter.Report(allFindings)
 }
 
 // Legacy API methods for backward compatibility
@@ -150,5 +160,6 @@ func (c *DataFlowCollector) IsSensitiveCall(call *ast.CallExpr) (SensitiveSource
 
 // CheckArgForSensitiveData checks if an argument contains sensitive data (legacy)
 func (c *DataFlowCollector) CheckArgForSensitiveData(arg ast.Expr) {
-	c.reporter.CheckArgForSensitiveData(arg)
+	findings := c.detector.CheckArgForSensitiveData(arg)
+	c.reporter.Report(findings)
 }
