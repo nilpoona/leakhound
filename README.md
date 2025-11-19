@@ -51,6 +51,37 @@ leakhound ./...
 leakhound ./internal/...
 ```
 
+#### Output Formats
+`leakhound` supports multiple output formats for different use cases:
+
+**Text format (default)**
+```bash
+# Human-readable output to stderr
+leakhound ./...
+```
+This format is compatible with existing tooling and outputs findings in the standard format: `/path/to/file.go:line:col: message`
+
+**SARIF format (v2.1.0)**
+```bash
+# Machine-readable JSON output to stdout
+leakhound --format=sarif ./...
+
+# Save SARIF output to file
+leakhound --format=sarif ./... > results.sarif
+```
+SARIF (Static Analysis Results Interchange Format) is an industry-standard format for static analysis results. It integrates with:
+- GitHub Advanced Security (Code Scanning)
+- Visual Studio Code
+- Azure DevOps
+- GitLab
+- Other CI/CD platforms
+
+The SARIF output includes:
+- Rule metadata with severity levels
+- Precise source locations (file path, line, column)
+- Detailed descriptions for each finding
+- Tool version information
+
 ### 3. Nested struct support
 `leakhound` can also detect sensitive fields in nested/embedded structs:
 
