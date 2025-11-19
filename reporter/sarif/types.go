@@ -20,17 +20,17 @@ type Tool struct {
 
 // Driver represents the analysis tool driver
 type Driver struct {
-	Name            string                 `json:"name"`              // "leakhound"
-	InformationURI  string                 `json:"informationUri"`    // GitHub repo
-	Version         string                 `json:"version"`           // Tool version
-	SemanticVersion string                 `json:"semanticVersion"`   // SemVer
-	Rules           []ReportingDescriptor  `json:"rules"`
+	Name            string                `json:"name"`            // "leakhound"
+	InformationURI  string                `json:"informationUri"`  // GitHub repo
+	Version         string                `json:"version"`         // Tool version
+	SemanticVersion string                `json:"semanticVersion"` // SemVer
+	Rules           []ReportingDescriptor `json:"rules"`
 }
 
 // ReportingDescriptor represents a rule definition
 type ReportingDescriptor struct {
-	ID                   string        `json:"id"`                // "sensitive-var"
-	Name                 string        `json:"name"`              // "SensitiveVariableLogged"
+	ID                   string        `json:"id"`   // "sensitive-var"
+	Name                 string        `json:"name"` // "SensitiveVariableLogged"
 	ShortDescription     MessageString `json:"shortDescription"`
 	FullDescription      MessageString `json:"fullDescription,omitempty"`
 	Help                 MessageString `json:"help,omitempty"`
@@ -73,8 +73,8 @@ type PhysicalLocation struct {
 
 // ArtifactLocation represents a file location
 type ArtifactLocation struct {
-	URI       string `json:"uri"`                     // Relative file path
-	URIBaseID string `json:"uriBaseId,omitempty"`     // "%SRCROOT%"
+	URI       string `json:"uri"`                 // Relative file path
+	URIBaseID string `json:"uriBaseId,omitempty"` // "%SRCROOT%"
 }
 
 // Region represents a region within a file
