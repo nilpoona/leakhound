@@ -1,7 +1,9 @@
 package sarif
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"path/filepath"
 
@@ -41,10 +43,18 @@ func (r *Reporter) buildDocument(findings []detector.Finding) *Document {
 		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
 		Runs: []Run{
 			{
-				Tool:    r.buildTool(),
-				Results: r.buildResults(findings),
+				Tool:              r.buildTool(),
+				Results:           r.buildResults(findings),
+				AutomationDetails: r.buildAutomationDetails(),
 			},
 		},
+	}
+}
+
+// buildAutomationDetails creates automation details for the run
+func (r *Reporter) buildAutomationDetails() *AutomationDetails {
+	return &AutomationDetails{
+		ID: "leakhound/analysis",
 	}
 }
 
@@ -58,6 +68,7 @@ func (r *Reporter) buildTool() Tool {
 	return Tool{
 		Driver: Driver{
 			Name:            "leakhound",
+			FullName:        "LeakHound Sensitive Data Detector",
 			InformationURI:  "https://github.com/nilpoona/leakhound",
 			Version:         version,
 			SemanticVersion: version,
@@ -148,6 +159,7 @@ func (r *Reporter) buildResults(findings []detector.Finding) []Result {
 // buildResult converts a single finding to SARIF result
 func (r *Reporter) buildResult(f detector.Finding) Result {
 	pos := r.pass.Fset.Position(f.Pos)
+	relPath := r.relativePath(pos.Filename)
 
 	return Result{
 		RuleID: f.RuleID,
@@ -158,7 +170,7 @@ func (r *Reporter) buildResult(f detector.Finding) Result {
 			{
 				PhysicalLocation: PhysicalLocation{
 					ArtifactLocation: ArtifactLocation{
-						URI:       r.relativePath(pos.Filename),
+						URI:       relPath,
 						URIBaseID: "%SRCROOT%",
 					},
 					Region: Region{
@@ -168,7 +180,21 @@ func (r *Reporter) buildResult(f detector.Finding) Result {
 				},
 			},
 		},
-		Level: "error",
+		Level:               "error",
+		PartialFingerprints: r.buildFingerprints(relPath, pos.Line, f.RuleID),
+	}
+}
+
+// buildFingerprints generates stable fingerprints for result matching
+func (r *Reporter) buildFingerprints(filePath string, line int, ruleID string) map[string]string {
+	// Create a stable fingerprint based on file path, line number, and rule ID
+	// This ensures the same issue at the same location gets the same fingerprint
+	fingerprint := fmt.Sprintf("%s:%d:%s", filePath, line, ruleID)
+	hash := sha256.Sum256([]byte(fingerprint))
+	primaryLocationHash := fmt.Sprintf("%x", hash[:16]) // Use first 16 bytes
+
+	return map[string]string{
+		"primaryLocationLineHash": primaryLocationHash,
 	}
 }
 

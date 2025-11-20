@@ -9,8 +9,15 @@ type Document struct {
 
 // Run represents an analysis run
 type Run struct {
-	Tool    Tool     `json:"tool"`
-	Results []Result `json:"results"`
+	Tool              Tool               `json:"tool"`
+	Results           []Result           `json:"results"`
+	AutomationDetails *AutomationDetails `json:"automationDetails,omitempty"`
+}
+
+// AutomationDetails represents automation information for the run
+type AutomationDetails struct {
+	ID   string `json:"id,omitempty"`   // Unique identifier for the automation run
+	GUID string `json:"guid,omitempty"` // Globally unique identifier
 }
 
 // Tool represents tool information
@@ -20,10 +27,11 @@ type Tool struct {
 
 // Driver represents the analysis tool driver
 type Driver struct {
-	Name            string                `json:"name"`            // "leakhound"
-	InformationURI  string                `json:"informationUri"`  // GitHub repo
-	Version         string                `json:"version"`         // Tool version
-	SemanticVersion string                `json:"semanticVersion"` // SemVer
+	Name            string                `json:"name"`                    // "leakhound"
+	FullName        string                `json:"fullName,omitempty"`      // Full display name
+	InformationURI  string                `json:"informationUri"`          // GitHub repo
+	Version         string                `json:"version"`                 // Tool version
+	SemanticVersion string                `json:"semanticVersion"`         // SemVer
 	Rules           []ReportingDescriptor `json:"rules"`
 }
 
@@ -49,10 +57,11 @@ type Configuration struct {
 
 // Result represents an analysis result
 type Result struct {
-	RuleID    string     `json:"ruleId"`
-	Message   Message    `json:"message"`
-	Locations []Location `json:"locations"`
-	Level     string     `json:"level,omitempty"` // "error", "warning", "note"
+	RuleID             string            `json:"ruleId"`
+	Message            Message           `json:"message"`
+	Locations          []Location        `json:"locations"`
+	Level              string            `json:"level,omitempty"`              // "error", "warning", "note"
+	PartialFingerprints map[string]string `json:"partialFingerprints,omitempty"` // Stable fingerprints for result matching
 }
 
 // Message represents a result message

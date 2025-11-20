@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"go/token"
@@ -145,6 +146,7 @@ func buildSARIFDocument(findings []findingWithFset, workDir string) *sarif.Docum
 	results := make([]sarif.Result, 0, len(findings))
 	for _, f := range findings {
 		pos := f.fset.Position(f.finding.Pos)
+		relPath := relativePath(pos.Filename, workDir)
 		results = append(results, sarif.Result{
 			RuleID: f.finding.RuleID,
 			Message: sarif.Message{
@@ -154,7 +156,7 @@ func buildSARIFDocument(findings []findingWithFset, workDir string) *sarif.Docum
 				{
 					PhysicalLocation: sarif.PhysicalLocation{
 						ArtifactLocation: sarif.ArtifactLocation{
-							URI:       relativePath(pos.Filename, workDir),
+							URI:       relPath,
 							URIBaseID: "%SRCROOT%",
 						},
 						Region: sarif.Region{
@@ -164,7 +166,8 @@ func buildSARIFDocument(findings []findingWithFset, workDir string) *sarif.Docum
 					},
 				},
 			},
-			Level: "error",
+			Level:               "error",
+			PartialFingerprints: buildFingerprints(relPath, pos.Line, f.finding.RuleID),
 		})
 	}
 
@@ -173,10 +176,29 @@ func buildSARIFDocument(findings []findingWithFset, workDir string) *sarif.Docum
 		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
 		Runs: []sarif.Run{
 			{
-				Tool:    buildTool(),
-				Results: results,
+				Tool:              buildTool(),
+				Results:           results,
+				AutomationDetails: buildAutomationDetails(),
 			},
 		},
+	}
+}
+
+func buildAutomationDetails() *sarif.AutomationDetails {
+	return &sarif.AutomationDetails{
+		ID: "leakhound/analysis",
+	}
+}
+
+func buildFingerprints(filePath string, line int, ruleID string) map[string]string {
+	// Create a stable fingerprint based on file path, line number, and rule ID
+	// This ensures the same issue at the same location gets the same fingerprint
+	fingerprint := fmt.Sprintf("%s:%d:%s", filePath, line, ruleID)
+	hash := sha256.Sum256([]byte(fingerprint))
+	primaryLocationHash := fmt.Sprintf("%x", hash[:16]) // Use first 16 bytes
+
+	return map[string]string{
+		"primaryLocationLineHash": primaryLocationHash,
 	}
 }
 
@@ -189,6 +211,7 @@ func buildTool() sarif.Tool {
 	return sarif.Tool{
 		Driver: sarif.Driver{
 			Name:            "leakhound",
+			FullName:        "LeakHound Sensitive Data Detector",
 			InformationURI:  "https://github.com/nilpoona/leakhound",
 			Version:         version,
 			SemanticVersion: version,
