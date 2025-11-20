@@ -40,7 +40,7 @@ func (r *Reporter) Report(findings []detector.Finding) error {
 func (r *Reporter) buildDocument(findings []detector.Finding) *Document {
 	return &Document{
 		Version: "2.1.0",
-		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+		Schema:  "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
 		Runs: []Run{
 			{
 				Tool:              r.buildTool(),

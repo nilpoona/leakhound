@@ -173,7 +173,7 @@ func buildSARIFDocument(findings []findingWithFset, workDir string) *sarif.Docum
 
 	return &sarif.Document{
 		Version: "2.1.0",
-		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+		Schema:  "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
 		Runs: []sarif.Run{
 			{
 				Tool:              buildTool(),
