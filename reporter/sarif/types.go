@@ -27,11 +27,11 @@ type Tool struct {
 
 // Driver represents the analysis tool driver
 type Driver struct {
-	Name            string                `json:"name"`                    // "leakhound"
-	FullName        string                `json:"fullName,omitempty"`      // Full display name
-	InformationURI  string                `json:"informationUri"`          // GitHub repo
-	Version         string                `json:"version"`                 // Tool version
-	SemanticVersion string                `json:"semanticVersion"`         // SemVer
+	Name            string                `json:"name"`               // "leakhound"
+	FullName        string                `json:"fullName,omitempty"` // Full display name
+	InformationURI  string                `json:"informationUri"`     // GitHub repo
+	Version         string                `json:"version"`            // Tool version
+	SemanticVersion string                `json:"semanticVersion"`    // SemVer
 	Rules           []ReportingDescriptor `json:"rules"`
 }
 
@@ -57,10 +57,10 @@ type Configuration struct {
 
 // Result represents an analysis result
 type Result struct {
-	RuleID             string            `json:"ruleId"`
-	Message            Message           `json:"message"`
-	Locations          []Location        `json:"locations"`
-	Level              string            `json:"level,omitempty"`              // "error", "warning", "note"
+	RuleID              string            `json:"ruleId"`
+	Message             Message           `json:"message"`
+	Locations           []Location        `json:"locations"`
+	Level               string            `json:"level,omitempty"`               // "error", "warning", "note"
 	PartialFingerprints map[string]string `json:"partialFingerprints,omitempty"` // Stable fingerprints for result matching
 }
 
