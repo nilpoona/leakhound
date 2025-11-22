@@ -90,74 +90,9 @@ func (r *AggregatingReporter) buildTool() Tool {
 	}
 }
 
-// buildRules defines all rule descriptors
+// buildRules returns all rule descriptors using shared definitions
 func (r *AggregatingReporter) buildRules() []ReportingDescriptor {
-	return []ReportingDescriptor{
-		{
-			ID:   "sensitive-var",
-			Name: "SensitiveVariableLogged",
-			ShortDescription: MessageString{
-				Text: "Variable containing sensitive data is logged",
-			},
-			FullDescription: MessageString{
-				Text: "A variable that contains data from a field tagged with sensitive:\"true\" is passed to a logging function.",
-			},
-			Help: MessageString{
-				Text: "Avoid logging variables that contain sensitive information. Consider redacting or removing the sensitive data before logging.",
-			},
-			DefaultConfiguration: Configuration{
-				Level: "error",
-			},
-		},
-		{
-			ID:   "sensitive-call",
-			Name: "SensitiveFunctionCallLogged",
-			ShortDescription: MessageString{
-				Text: "Function call returning sensitive data is logged",
-			},
-			FullDescription: MessageString{
-				Text: "A function call that returns sensitive data (from a field tagged with sensitive:\"true\") is passed to a logging function.",
-			},
-			Help: MessageString{
-				Text: "Avoid logging function return values that contain sensitive information. Store the result in a variable and redact sensitive fields before logging.",
-			},
-			DefaultConfiguration: Configuration{
-				Level: "error",
-			},
-		},
-		{
-			ID:   "sensitive-struct",
-			Name: "SensitiveStructLogged",
-			ShortDescription: MessageString{
-				Text: "Struct containing sensitive fields is logged",
-			},
-			FullDescription: MessageString{
-				Text: "An entire struct that contains fields tagged with sensitive:\"true\" is passed to a logging function.",
-			},
-			Help: MessageString{
-				Text: "Avoid logging entire structs that contain sensitive fields. Log only the non-sensitive fields individually.",
-			},
-			DefaultConfiguration: Configuration{
-				Level: "error",
-			},
-		},
-		{
-			ID:   "sensitive-field",
-			Name: "SensitiveFieldLogged",
-			ShortDescription: MessageString{
-				Text: "Sensitive struct field is logged",
-			},
-			FullDescription: MessageString{
-				Text: "A struct field tagged with sensitive:\"true\" is directly accessed and passed to a logging function.",
-			},
-			Help: MessageString{
-				Text: "Avoid logging fields marked as sensitive. Remove the field from the log call or redact its value.",
-			},
-			DefaultConfiguration: Configuration{
-				Level: "error",
-			},
-		},
-	}
+	return BuildRules()
 }
 
 // buildResults converts all findings to SARIF results
@@ -173,9 +108,10 @@ func (r *AggregatingReporter) buildResults() []Result {
 func (r *AggregatingReporter) buildResult(f FindingWithFset) Result {
 	pos := f.Fset.Position(f.Finding.Pos)
 	relPath := r.relativePath(pos.Filename)
+	sarifRuleID := ToSARIFRuleID(f.Finding.RuleID)
 
 	return Result{
-		RuleID: f.Finding.RuleID,
+		RuleID: sarifRuleID,
 		Message: Message{
 			Text: f.Finding.Message,
 		},
@@ -194,7 +130,7 @@ func (r *AggregatingReporter) buildResult(f FindingWithFset) Result {
 			},
 		},
 		Level:               "error",
-		PartialFingerprints: r.buildFingerprints(relPath, pos.Line, f.Finding.RuleID),
+		PartialFingerprints: r.buildFingerprints(relPath, pos.Line, sarifRuleID),
 	}
 }
 
