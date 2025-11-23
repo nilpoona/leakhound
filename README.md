@@ -339,7 +339,3 @@ $ leakhound ./...
 ./config.go:34:19: function call returns sensitive field "Config.APIKey" (tagged with sensitive:"true")
 ./user.go:10:14: struct 'User' contains sensitive fields and should not be logged entirely
 ```
-
-## License
-
-MIT License
