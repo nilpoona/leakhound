@@ -16,4 +16,3 @@ func ExampleWithConfig(logger *CustomLogger, user User) {
 	// Should be detected: entire struct
 	logger.Error("error", user) // want "struct 'User' contains sensitive fields and should not be logged entirely"
 }
-
