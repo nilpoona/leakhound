@@ -1,0 +1,32 @@
+# Configuration for go.uber.org/zap
+# Tested with: zap v1.27.0
+# Last updated: 2025-01-10
+
+targets:
+  - package: "go.uber.org/zap"
+    methods:
+      - receiver: "*Logger"
+        names:
+          - "Debug"
+          - "Info"
+          - "Warn"
+          - "Error"
+          - "DPanic"
+          - "Panic"
+          - "Fatal"
+      - receiver: "*SugaredLogger"
+        names:
+          - "Debugf"
+          - "Debugw"
+          - "Infof"
+          - "Infow"
+          - "Warnf"
+          - "Warnw"
+          - "Errorf"
+          - "Errorw"
+          - "DPanicf"
+          - "DPanicw"
+          - "Panicf"
+          - "Panicw"
+          - "Fatalf"
+          - "Fatalw"

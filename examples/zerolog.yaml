@@ -1,0 +1,16 @@
+# Configuration for github.com/rs/zerolog
+# Tested with: zerolog v1.32.0
+# Last updated: 2025-01-10
+
+targets:
+  - package: "github.com/rs/zerolog"
+    methods:
+      - receiver: "*Event"
+        names:
+          - "Msg"
+          - "Msgf"
+          - "Send"
+      - receiver: "*Logger"
+        names:
+          - "Print"
+          - "Printf"
