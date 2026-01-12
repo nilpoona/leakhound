@@ -1,7 +1,5 @@
 
 # Configuration for go.uber.org/zap
-# Tested with: zap v1.27.0
-# Last updated: 2025-01-10
 
 targets:
   - package: "go.uber.org/zap"
