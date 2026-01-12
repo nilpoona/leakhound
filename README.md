@@ -140,6 +140,7 @@ leakhound ./...
 ### Adding Third-party Logger Support
 
 To detect sensitive data in third-party logging libraries like zap, zerolog, or logrus:
+Note: The provided configuration files only cover commonly used methods for each library. They do not cover all methods, so please customize them as needed.
 
 1. **Download a pre-made configuration**:
 
@@ -153,6 +154,7 @@ curl -o .leakhound.yaml https://raw.githubusercontent.com/nilpoona/leakhound/mai
 # For logrus
 curl -o .leakhound.yaml https://raw.githubusercontent.com/nilpoona/leakhound/main/examples/logrus.yaml
 ```
+
 
 2. **Run leakhound**:
 
