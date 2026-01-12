@@ -1,3 +1,4 @@
+
 # Configuration for go.uber.org/zap
 # Tested with: zap v1.27.0
 # Last updated: 2025-01-10
@@ -16,17 +17,30 @@ targets:
           - "Fatal"
       - receiver: "*SugaredLogger"
         names:
+          - "Debug"
           - "Debugf"
           - "Debugw"
+          - "Debugln"
+          - "Info"
+          - "Infoln"
           - "Infof"
           - "Infow"
+          - "Warn"
           - "Warnf"
+          - "Warnln"
           - "Warnw"
+          - "Error"
+          - "Errorln"
           - "Errorf"
           - "Errorw"
+          - "DPanicln"
           - "DPanicf"
           - "DPanicw"
+          - "Panic"
+          - "Panicln"
           - "Panicf"
           - "Panicw"
+          - "Fatal"
+          - "Fatalln"
           - "Fatalf"
           - "Fatalw"
