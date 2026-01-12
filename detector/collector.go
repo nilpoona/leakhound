@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/nilpoona/leakhound/config"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -25,10 +26,10 @@ type DataFlowCollector struct {
 }
 
 // NewDataFlowCollector creates a new collector with all components initialized
-func NewDataFlowCollector(pass *analysis.Pass) *DataFlowCollector {
+func NewDataFlowCollector(pass *analysis.Pass, cfg *config.Config) *DataFlowCollector {
 	fieldCollector := NewFieldCollector(pass)
 	varTracker := NewVarTracker(pass, fieldCollector.GetSensitiveFields())
-	logDetector := NewLogDetector(pass)
+	logDetector := NewLogDetectorWithConfig(pass, cfg)
 	detector := NewDetector(pass, fieldCollector.GetSensitiveFields(), varTracker)
 
 	return &DataFlowCollector{

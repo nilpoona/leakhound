@@ -1,0 +1,14 @@
+# Configuration for github.com/rs/zerolog
+
+targets:
+  - package: "github.com/rs/zerolog"
+    methods:
+      - receiver: "*Event"
+        names:
+          - "Msg"
+          - "Msgf"
+          - "Send"
+      - receiver: "*Logger"
+        names:
+          - "Print"
+          - "Printf"

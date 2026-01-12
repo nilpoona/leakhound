@@ -1,0 +1,13 @@
+targets:
+  - package: "customlogger"
+    functions:
+      - "Log"
+      - "Logf"
+    methods:
+      - receiver: "*CustomLogger"
+        names:
+          - "Log"
+          - "Logf"
+          - "Info"
+          - "Debug"
+          - "Error"

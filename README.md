@@ -7,6 +7,7 @@ Like a bloodhound sniffing out leaks, it tracks down potential data leakage risk
   - **Data Flow Analysis**: Tracks sensitive data through variables, function parameters, and return values
   - Detects if struct fields tagged with `sensitive:"true"` are being output by logging functions
   - Supports multiple logging packages: `log/slog`, `log`, and `fmt`
+  - **Configurable**: Add support for third-party logging libraries (zap, zerolog, logrus, etc.) via YAML configuration
   - Zero runtime overhead (static analysis only)
 
 ## Installation
@@ -112,12 +113,108 @@ slog.Info("secret", wrapConfig.Config.Secret)    // Detects nested field access
   - ✅ **Reliable prevention**: Blocks sensitive data before it can be logged.
 
 ## Supported Logging Libraries
-Currently supported logging libraries:
+
+### Built-in Support (No Configuration Required)
   - ✅ `log/slog` (Go 1.21+)
   - ✅ `*slog.Logger` type custom loggers
   - ✅ `log` (standard log package)
   - ✅ `*log.Logger` type custom loggers
   - ✅ `fmt` (Printf, Println, Print, etc.)
+
+### Third-party Libraries (via Configuration)
+  - ✅ `go.uber.org/zap` ([example config](examples/zap.yaml))
+  - ✅ `github.com/rs/zerolog` ([example config](examples/zerolog.yaml))
+  - ✅ `github.com/sirupsen/logrus` ([example config](examples/logrus.yaml))
+  - ✅ Any custom logging library
+
+## Configuration
+
+### Quick Start
+
+For standard libraries (`log`, `log/slog`, `fmt`), no configuration is needed. Just run:
+
+```bash
+leakhound ./...
+```
+
+### Adding Third-party Logger Support
+
+To detect sensitive data in third-party logging libraries like zap, zerolog, or logrus:
+
+1. **Download a pre-made configuration**:
+
+```bash
+# For zap
+curl -o .leakhound.yaml https://raw.githubusercontent.com/nilpoona/leakhound/main/examples/zap.yaml
+
+# For zerolog
+curl -o .leakhound.yaml https://raw.githubusercontent.com/nilpoona/leakhound/main/examples/zerolog.yaml
+
+# For logrus
+curl -o .leakhound.yaml https://raw.githubusercontent.com/nilpoona/leakhound/main/examples/logrus.yaml
+```
+
+2. **Run leakhound**:
+
+```bash
+leakhound ./...
+```
+
+The tool will automatically find `.leakhound.yaml` in the current directory.
+
+### Custom Configuration
+
+Create a `.leakhound.yaml` file in your project root:
+
+```yaml
+targets:
+  - package: "go.uber.org/zap"
+    methods:
+      - receiver: "*Logger"
+        names:
+          - "Info"
+          - "Debug"
+          - "Error"
+      - receiver: "*SugaredLogger"
+        names:
+          - "Infow"
+          - "Debugw"
+```
+
+Or specify a custom path:
+
+```bash
+leakhound --config path/to/config.yaml ./...
+```
+
+### Configuration Format
+
+```yaml
+targets:
+  - package: "go.uber.org/zap"           # Package import path
+    functions:                            # Package-level functions (optional)
+      - "Info"
+      - "Debug"
+    methods:                              # Methods on specific types (optional)
+      - receiver: "*Logger"               # Receiver type (* for pointer)
+        names:                            # Method names
+          - "Info"
+          - "Debug"
+```
+
+**Requirements**:
+- At least one of `functions` or `methods` must be specified
+- Package paths must be lowercase: `a-z`, `0-9`, `.`, `-`, `/`
+- Function and method names must be valid Go identifiers
+- Receiver types can be pointer (`*Logger`) or value (`Logger`)
+
+**Limits** (to prevent abuse):
+- Maximum 20 targets
+- Maximum 50 functions per target
+- Maximum 10 method configs per target
+- Maximum 50 method names per method config
+
+See [examples/](examples/) for more configuration examples.
 
 ## Advanced Detection: Data Flow Tracking
 

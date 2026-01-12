@@ -3,6 +3,7 @@ package leakhound
 import (
 	"reflect"
 
+	"github.com/nilpoona/leakhound/config"
 	"github.com/nilpoona/leakhound/detector"
 	"github.com/nilpoona/leakhound/reporter"
 	"golang.org/x/tools/go/analysis"
@@ -33,9 +34,11 @@ var Analyzer = &analysis.Analyzer{
 }
 
 var outputFormat string
+var configPath string
 
 func init() {
 	Analyzer.Flags.StringVar(&outputFormat, "format", "text", "Output format: text or sarif")
+	Analyzer.Flags.StringVar(&configPath, "config", "", "path to config file (default: .leakhound.yaml)")
 }
 
 // ResultType holds the findings from analysis
@@ -44,8 +47,14 @@ type ResultType struct {
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
+	// Load configuration
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+
 	// Phase 1: Collection
-	collector := detector.NewDataFlowCollector(pass)
+	collector := detector.NewDataFlowCollector(pass, &cfg)
 	collector.Collect()
 
 	// Phase 2: Detection (returns findings)
@@ -54,11 +63,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// For text format, report immediately
 	// For SARIF format, the custom driver in cmd/leakhound/main.go handles output
 	if outputFormat != "sarif" {
-		config := reporter.Config{
+		repConfig := reporter.Config{
 			Format: reporter.Format(outputFormat),
 		}
 
-		rep, err := reporter.New(pass, config)
+		rep, err := reporter.New(pass, repConfig)
 		if err != nil {
 			return nil, err
 		}

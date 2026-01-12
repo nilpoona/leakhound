@@ -3,19 +3,31 @@ package detector
 import (
 	"go/ast"
 	"go/types"
+	"slices"
 
+	"github.com/nilpoona/leakhound/config"
 	"golang.org/x/tools/go/analysis"
 )
 
 // LogDetector detects logging function calls and identifies their arguments
 type LogDetector struct {
-	pass *analysis.Pass
+	pass   *analysis.Pass
+	config *config.Config
 }
 
 // NewLogDetector creates a new LogDetector
 func NewLogDetector(pass *analysis.Pass) *LogDetector {
 	return &LogDetector{
-		pass: pass,
+		pass:   pass,
+		config: nil,
+	}
+}
+
+// NewLogDetectorWithConfig creates a new LogDetector with custom configuration
+func NewLogDetectorWithConfig(pass *analysis.Pass, cfg *config.Config) *LogDetector {
+	return &LogDetector{
+		pass:   pass,
+		config: cfg,
 	}
 }
 
@@ -73,6 +85,11 @@ func (ld *LogDetector) IsLogCall(call *ast.CallExpr) bool {
 				return true
 			}
 		}
+	}
+
+	// Check custom targets from configuration
+	if ld.config != nil {
+		return ld.isCustomLogCall(pkgPath, funcName, fn)
 	}
 
 	return false
@@ -153,4 +170,79 @@ func isLogLoggerType(t types.Type) bool {
 	}
 
 	return pkg.Path() == "log"
+}
+
+// isCustomLogCall checks if the call matches any custom target configuration
+func (ld *LogDetector) isCustomLogCall(pkgPath, funcName string, fn *types.Func) bool {
+	for _, target := range ld.config.Targets {
+		if target.Package != pkgPath {
+			continue
+		}
+
+		// Check if it's a package-level function
+		if slices.Contains(target.Functions, funcName) {
+			return true
+		}
+
+		// Check if it's a method on a configured receiver type
+		sig, ok := fn.Type().(*types.Signature)
+		if !ok {
+			continue
+		}
+
+		recv := sig.Recv()
+		if recv == nil {
+			continue
+		}
+
+		for _, method := range target.Methods {
+			if ld.isMatchingReceiverType(recv.Type(), pkgPath, method.Receiver) {
+				if slices.Contains(method.Names, funcName) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// isMatchingReceiverType checks if the receiver type matches the configured receiver
+func (ld *LogDetector) isMatchingReceiverType(t types.Type, pkgPath, configReceiver string) bool {
+	// configReceiver can be "*Logger" or "Logger"
+	isPointer := false
+	typeName := configReceiver
+	if len(configReceiver) > 0 && configReceiver[0] == '*' {
+		isPointer = true
+		typeName = configReceiver[1:]
+	}
+
+	// Check pointer type
+	if isPointer {
+		ptr, ok := t.(*types.Pointer)
+		if !ok {
+			return false
+		}
+		t = ptr.Elem()
+	}
+
+	// Get the named type
+	named, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+
+	// Check if the type name matches
+	obj := named.Obj()
+	if obj == nil || obj.Name() != typeName {
+		return false
+	}
+
+	// Check if the package matches
+	pkg := obj.Pkg()
+	if pkg == nil {
+		return false
+	}
+
+	return pkg.Path() == pkgPath
 }
