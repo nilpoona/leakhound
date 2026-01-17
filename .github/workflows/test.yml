@@ -1,4 +1,4 @@
-name: GoTest
+name: GoTestAndBuild
 
 on:
   push:
@@ -23,6 +23,9 @@ jobs:
     # SEE: https://github.com/golang/go/issues/75031#issuecomment-3195256688
     - name: Set GOTOOLCHAIN
       run: go env -w GOTOOLCHAIN=go1.25.0+auto
+
+    - name: Build
+      run: make build
 
     - name: Download dependencies
       run: go mod download
