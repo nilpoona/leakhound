@@ -1,7 +1,15 @@
 
 # leakhound 🐕
-`leakhound` is a static analysis tool for Go that detects whether sensitive information is being accidentally logged.
-Like a bloodhound sniffing out leaks, it tracks down potential data leakage risks in your code.
+
+A Go static analysis tool that detects accidental logging 
+of sensitive struct fields tagged with `sensitive:"true"`, preventing 
+data leaks in logs.
+
+## Badges
+[![GoTestAndBuild](https://github.com/nilpoona/leakhound/actions/workflows/test.yml/badge.svg)](https://github.com/nilpoona/leakhound/actions/workflows/test.yml)
+[![License](https://img.shields.io/github/license/nilpoona/leakhound)](/LICENSE)
+[![Release](https://img.shields.io/github/release/nilpoona/leakhound.svg)](https://github.com/nilpoona/leakhound/releases/latest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/nilpoona/leakhound)](https://goreportcard.com/report/github.com/nilpoona/leakhound)
 
 ## Features
   - **Data Flow Analysis**: Tracks sensitive data through variables, function parameters, and return values
