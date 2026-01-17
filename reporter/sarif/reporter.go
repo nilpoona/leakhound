@@ -16,9 +16,10 @@ type Reporter struct {
 	pass    *analysis.Pass
 	writer  io.Writer
 	workDir string // Repository root for relative paths
+	version string // Tool version
 }
 
-// Version of leakhound
+// Version of leakhound (exported for backward compatibility and build-time injection)
 var Version = "0.0.8"
 
 // NewReporter creates a SARIF reporter
@@ -27,6 +28,7 @@ func NewReporter(pass *analysis.Pass, writer io.Writer, workDir string) *Reporte
 		pass:    pass,
 		writer:  writer,
 		workDir: workDir,
+		version: Version, // Capture version at creation time
 	}
 }
 
@@ -60,7 +62,7 @@ func (r *Reporter) buildAutomationDetails() *AutomationDetails {
 
 // buildTool creates tool descriptor
 func (r *Reporter) buildTool() Tool {
-	version := Version
+	version := r.version
 	if version == "" {
 		version = "dev"
 	}
