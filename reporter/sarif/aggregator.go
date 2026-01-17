@@ -21,6 +21,7 @@ type FindingWithFset struct {
 type AggregatingReporter struct {
 	workDir  string
 	findings []FindingWithFset
+	version  string // Tool version
 }
 
 // NewAggregatingReporter creates a new aggregating reporter for multi-package analysis
@@ -28,6 +29,7 @@ func NewAggregatingReporter(workDir string) *AggregatingReporter {
 	return &AggregatingReporter{
 		workDir:  workDir,
 		findings: []FindingWithFset{},
+		version:  Version, // Capture version at creation time
 	}
 }
 
@@ -73,7 +75,7 @@ func (r *AggregatingReporter) buildAutomationDetails() *AutomationDetails {
 
 // buildTool creates tool descriptor
 func (r *AggregatingReporter) buildTool() Tool {
-	version := Version
+	version := r.version
 	if version == "" {
 		version = "dev"
 	}
