@@ -6,7 +6,7 @@ of sensitive struct fields tagged with `sensitive:"true"`, preventing
 data leaks in logs.
 
 ## Badges
-[![Build Status](https://github.com/nilpoona/leakhound/actions/workflows/test.yml/badge.svg)](https://github.com/nilpoona/leakhound/actions/workflows/test.yml)
+[![GoTestAndBuild](https://github.com/nilpoona/leakhound/actions/workflows/test.yml/badge.svg)](https://github.com/nilpoona/leakhound/actions/workflows/test.yml)
 [![License](https://img.shields.io/github/license/nilpoona/leakhound)](/LICENSE)
 [![Release](https://img.shields.io/github/release/nilpoona/leakhound.svg)](https://github.com/nilpoona/leakhound/releases/latest)
 [![Go Report Card](https://goreportcard.com/badge/github.com/nilpoona/leakhound)](https://goreportcard.com/report/github.com/nilpoona/leakhound)
