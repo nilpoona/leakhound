@@ -9,20 +9,20 @@ jobs:
     
     strategy:
       matrix:
-        go-version: ['1.21.1', '1.22.0', '1.22.1', '1.23.0', '1.24.0', '1.25.1', '1.26.0']
+        go-version: ['1.21.1', '1.22.0', '1.22.1', '1.23.0', '1.24.0', '1.25.1', '1.26']
       fail-fast: false
     
     steps:
     - uses: actions/checkout@v5
     
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ matrix.go-version }}
     
     # SEE: https://github.com/golang/go/issues/75031#issuecomment-3195256688
     - name: Set GOTOOLCHAIN
-      run: go env -w GOTOOLCHAIN=go1.26.0+auto
+      run: go env -w GOTOOLCHAIN=go1.25.0+auto
 
     - name: Build
       run: make build
