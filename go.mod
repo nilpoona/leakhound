@@ -1,6 +1,6 @@
 module github.com/nilpoona/leakhound
 
-go 1.25.1
+go 1.26
 
 require golang.org/x/tools v0.37.0
 
