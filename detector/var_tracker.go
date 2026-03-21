@@ -77,7 +77,6 @@ func (vt *VarTracker) CollectReturn(ret *ast.ReturnStmt) {
 	vt.facts.CollectReturn(ret)
 }
 
-
 // AnalyzeDataFlow delegates to DataFlowAnalyzer
 func (vt *VarTracker) AnalyzeDataFlow() {
 	vt.analyzer.Analyze()
