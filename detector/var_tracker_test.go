@@ -408,6 +408,253 @@ func test() {
 	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
 }
 
+// TC-11a: Multi-value return — position 0 is sensitive, must be detected via variable
+func TestVarTracker_MultiValueReturn_SensitiveAtPosition0(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Password string %s
+}
+
+func sink(v string) {}
+
+func getPasswordAndErr(u User) (string, error) {
+	return u.Password, nil
+}
+
+func test() {
+	u := User{}
+	password, err := getPasswordAndErr(u)
+	_ = err
+	sink(password) // want "sensitive var: password from User.Password"
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-11b: Multi-value return — position 1 (error) must NOT be detected
+func TestVarTracker_MultiValueReturn_NonSensitivePosition_NoReport(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Password string %s
+}
+
+func sink(v error) {}
+
+func getPasswordAndErr(u User) (string, error) {
+	return u.Password, nil
+}
+
+func test() {
+	u := User{}
+	_, err := getPasswordAndErr(u)
+	sink(err) // not sensitive
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-11c: Multi-value return — two-hop chain: v, err := f() → w := v → sink(w)
+func TestVarTracker_MultiValueReturn_TwoHopChain(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Password string %s
+}
+
+func sink(v string) {}
+
+func getPasswordAndErr(u User) (string, error) {
+	return u.Password, nil
+}
+
+func test() {
+	u := User{}
+	password, err := getPasswordAndErr(u)
+	_ = err
+	w := password
+	sink(w) // want "sensitive var: w from User.Password"
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-11d: Multi-value return — sensitive value passed to another function as parameter
+func TestVarTracker_MultiValueReturn_PassToFunction(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Password string %s
+}
+
+func sink(v string) {}
+
+func getPasswordAndErr(u User) (string, error) {
+	return u.Password, nil
+}
+
+func logParam(v string) {
+	sink(v) // want "sensitive var: v from User.Password"
+}
+
+func test() {
+	u := User{}
+	password, err := getPasswordAndErr(u)
+	_ = err
+	logParam(password)
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-11e: Multi-value return — both positions sensitive
+func TestVarTracker_MultiValueReturn_BothPositionsSensitive(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Password string %s
+	Token    string %s
+}
+
+func sink(v string) {}
+
+func getCredentials(u User) (string, string) {
+	return u.Password, u.Token
+}
+
+func test() {
+	u := User{}
+	password, token := getCredentials(u)
+	sink(password) // want "sensitive var: password from User.Password"
+	sink(token)    // want "sensitive var: token from User.Token"
+}
+`, sensitiveStructTag(), sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-11f: 3 returns — sensitive at position 1 (middle), positions 0 and 2 not flagged
+func TestVarTracker_ThreeValueReturn_SensitiveAtMiddle(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Name     string
+	Password string %s
+}
+
+func sink(v string) {}
+
+func getNamePasswordErr(u User) (string, string, error) {
+	return u.Name, u.Password, nil
+}
+
+func test() {
+	u := User{}
+	name, password, err := getNamePasswordErr(u)
+	_ = err
+	sink(name)     // not sensitive
+	sink(password) // want "sensitive var: password from User.Password"
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-11g: 3 returns — sensitive at last position (index 2)
+func TestVarTracker_ThreeValueReturn_SensitiveAtLast(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Name     string
+	Password string %s
+}
+
+func sink(v string) {}
+
+func getErrNamePassword(u User) (error, string, string) {
+	return nil, u.Name, u.Password
+}
+
+func test() {
+	u := User{}
+	err, name, password := getErrNamePassword(u)
+	_ = err
+	sink(name)     // not sensitive
+	sink(password) // want "sensitive var: password from User.Password"
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-11h: 3 returns — multiple positions sensitive, non-sensitive position not flagged
+func TestVarTracker_ThreeValueReturn_MultipleSensitive(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Name     string
+	Password string %s
+	Token    string %s
+}
+
+func sink(v string) {}
+
+func getPasswordTokenName(u User) (string, string, string) {
+	return u.Password, u.Token, u.Name
+}
+
+func test() {
+	u := User{}
+	password, token, name := getPasswordTokenName(u)
+	sink(password) // want "sensitive var: password from User.Password"
+	sink(token)    // want "sensitive var: token from User.Token"
+	sink(name)     // not sensitive
+}
+`, sensitiveStructTag(), sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-11i: 3 returns — blank identifier (_) for sensitive position must not panic
+func TestVarTracker_ThreeValueReturn_BlankIdentifier(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Name     string
+	Password string %s
+}
+
+func sink(v string) {}
+
+func getNamePasswordErr(u User) (string, string, error) {
+	return u.Name, u.Password, nil
+}
+
+func test() {
+	u := User{}
+	_, password, err := getNamePasswordErr(u)
+	_ = err
+	sink(password) // want "sensitive var: password from User.Password"
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
 // TC-11: Verify that GetSensitiveVars returns the sensitiveVars map (query API verification)
 //
 // This test directly checks VarTracker's internal state rather than using sinkAnalyzer.
