@@ -71,6 +71,13 @@ type Result struct {
 	Locations           []Location        `json:"locations"`
 	Level               string            `json:"level,omitempty"`               // "error", "warning", "note"
 	PartialFingerprints map[string]string `json:"partialFingerprints,omitempty"` // Stable fingerprints for result matching
+	Suppressions        []Suppression     `json:"suppressions,omitempty"`        // Present when result is suppressed
+}
+
+// Suppression represents a suppression entry on a SARIF result
+type Suppression struct {
+	Kind  string `json:"kind"`            // "inSource" (inline comment) or "external" (config file)
+	State string `json:"state,omitempty"` // "accepted"
 }
 
 // Message represents a result message
@@ -117,22 +124,6 @@ const (
 	RuleIDSensitiveStruct = "LH0003"
 	RuleIDSensitiveField  = "LH0004"
 )
-
-// ruleIDMapping maps detector rule IDs to SARIF conventional format (tool prefix + numeric code)
-var ruleIDMapping = map[string]string{
-	"sensitive-var":    RuleIDSensitiveVar,
-	"sensitive-call":   RuleIDSensitiveCall,
-	"sensitive-struct": RuleIDSensitiveStruct,
-	"sensitive-field":  RuleIDSensitiveField,
-}
-
-// ToSARIFRuleID converts a detector rule ID to SARIF conventional format
-func ToSARIFRuleID(detectorRuleID string) string {
-	if sarifID, ok := ruleIDMapping[detectorRuleID]; ok {
-		return sarifID
-	}
-	return detectorRuleID // fallback to original if not mapped
-}
 
 // BuildRules returns all rule descriptors for SARIF output
 func BuildRules() []ReportingDescriptor {

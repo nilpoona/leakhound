@@ -14,6 +14,7 @@ func Test(t *testing.T) {
 		"buildconstraint",
 		"crosspackage",
 		"dataflow",
+		"suppression",
 	}
 
 	for _, pattern := range patterns {

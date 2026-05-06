@@ -110,9 +110,9 @@ func (r *AggregatingReporter) buildResults() []Result {
 func (r *AggregatingReporter) buildResult(f FindingWithFset) Result {
 	pos := f.Fset.Position(f.Finding.Pos)
 	relPath := r.relativePath(pos.Filename)
-	sarifRuleID := ToSARIFRuleID(f.Finding.RuleID)
+	sarifRuleID := f.Finding.SARIFRuleID()
 
-	return Result{
+	result := Result{
 		RuleID: sarifRuleID,
 		Message: Message{
 			Text: f.Finding.Message,
@@ -134,6 +134,12 @@ func (r *AggregatingReporter) buildResult(f FindingWithFset) Result {
 		Level:               "error",
 		PartialFingerprints: r.buildFingerprints(relPath, pos.Line, sarifRuleID),
 	}
+
+	if f.Finding.Suppressed {
+		result.Suppressions = []Suppression{{Kind: f.Finding.SuppressionKind, State: "accepted"}}
+	}
+
+	return result
 }
 
 // buildFingerprints generates stable fingerprints for result matching

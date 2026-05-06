@@ -28,7 +28,13 @@ const (
 
 // Config represents the configuration file structure
 type Config struct {
-	Targets []TargetConfig `yaml:"targets"`
+	Targets  []TargetConfig `yaml:"targets"`
+	Suppress SuppressConfig `yaml:"suppress"`
+}
+
+// SuppressConfig holds rule-level suppression settings
+type SuppressConfig struct {
+	Rules []string `yaml:"rules"` // SARIF rule IDs to suppress globally e.g. ["LH0001", "LH0002"]
 }
 
 // TargetConfig represents a target logging library configuration
@@ -45,6 +51,14 @@ type MethodConfig struct {
 }
 
 var packagePathPattern = regexp.MustCompile(`^[a-z0-9.\-/]+$`)
+
+// validSARIFRuleIDs is the set of rule IDs that can be used in suppress.rules.
+var validSARIFRuleIDs = map[string]bool{
+	"LH0001": true,
+	"LH0002": true,
+	"LH0003": true,
+	"LH0004": true,
+}
 
 // LoadConfig loads the configuration file from the specified path.
 // If path is empty, it looks for the default configuration file in the current directory.
@@ -134,6 +148,13 @@ func ValidateConfig(config *Config) error {
 	for i, target := range config.Targets {
 		if err := validateTarget(i, &target); err != nil {
 			return err
+		}
+	}
+
+	// Validate suppress.rules
+	for _, ruleID := range config.Suppress.Rules {
+		if !validSARIFRuleIDs[ruleID] {
+			return fmt.Errorf("suppress.rules: invalid rule ID %q (valid values: LH0001, LH0002, LH0003, LH0004)", ruleID)
 		}
 	}
 

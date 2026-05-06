@@ -435,6 +435,80 @@ func TestValidateConfig_ValidValueReceiver(t *testing.T) {
 	}
 }
 
+func TestValidateConfig_SuppressRules_Valid(t *testing.T) {
+	tests := []struct {
+		name  string
+		rules []string
+	}{
+		{"empty rules", []string{}},
+		{"nil rules", nil},
+		{"single valid", []string{"LH0001"}},
+		{"all four rules", []string{"LH0001", "LH0002", "LH0003", "LH0004"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Suppress: SuppressConfig{Rules: tt.rules}}
+			if err := ValidateConfig(cfg); err != nil {
+				t.Errorf("ValidateConfig() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestValidateConfig_SuppressRules_Invalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		rules []string
+	}{
+		{"detector rule ID instead of SARIF", []string{"sensitive-var"}},
+		{"out-of-range numeric", []string{"LH0099"}},
+		{"lowercase", []string{"lh0001"}},
+		{"extra prefix", []string{"LH00001"}},
+		{"empty string", []string{""}},
+		{"mixed valid and invalid", []string{"LH0001", "LH0099"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Suppress: SuppressConfig{Rules: tt.rules}}
+			if err := ValidateConfig(cfg); err == nil {
+				t.Errorf("ValidateConfig() error = nil, want error for rules = %v", tt.rules)
+			}
+		})
+	}
+}
+
+func TestLoadConfig_SuppressRules(t *testing.T) {
+	t.Run("valid suppress rules in YAML", func(t *testing.T) {
+		yaml := `suppress:
+  rules:
+    - "LH0001"
+    - "LH0003"
+`
+		tmpFile := createTempConfigFile(t, yaml)
+		cfg, err := LoadConfig(tmpFile)
+		if err != nil {
+			t.Fatalf("LoadConfig() error = %v, want nil", err)
+		}
+		if len(cfg.Suppress.Rules) != 2 {
+			t.Errorf("len(Suppress.Rules) = %d, want 2", len(cfg.Suppress.Rules))
+		}
+	})
+
+	t.Run("invalid suppress rule ID in YAML", func(t *testing.T) {
+		yaml := `suppress:
+  rules:
+    - "sensitive-struct"
+`
+		tmpFile := createTempConfigFile(t, yaml)
+		_, err := LoadConfig(tmpFile)
+		if err == nil {
+			t.Error("LoadConfig() error = nil, want error for invalid rule ID")
+		}
+	})
+}
+
 func TestValidatePackagePath(t *testing.T) {
 	tests := []struct {
 		name    string
