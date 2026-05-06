@@ -265,7 +265,7 @@ outer(password)  // Tracks up to 5 levels deep
 
 ### Return Values
 ```go
-// ✅ Return value tracking
+// ✅ Single return value tracking
 func getPassword(user User) string {
     return user.Password
 }
@@ -276,6 +276,15 @@ slog.Info("msg", getPassword(user))  // Detected!
 // Via variable
 password := getPassword(user)
 log.Println(password)  // Detected!
+
+// ✅ Multi-value return tracking 
+func getPasswordAndErr(user User) (string, error) {
+    return user.Password, nil
+}
+
+password, err := getPasswordAndErr(user)
+slog.Info("msg", password)  // Detected! (position 0 is sensitive)
+slog.Info("msg", err)       // Not detected (position 1 is not sensitive)
 ```
 
 ## Limitations
@@ -297,12 +306,10 @@ func logMultiple(vals ...string) {
 password := user.Password
 logMultiple("safe", password)  // Not tracked
 
-// ❌ Multiple return values (not yet implemented)
-func getCredentials(user User) (string, string, error) {
-    return user.Name, user.Password, nil
-}
-name, password, err := getCredentials(user)
-slog.Info("msg", password)  // Position tracking not implemented
+// ❌ Reassignments (flow-sensitive analysis not implemented)
+password := user.Password  // Sensitive
+password = "safe-value"    // Overwritten
+slog.Info("msg", password) // May still be reported
 
 // ❌ Via reflection
 val := reflect.ValueOf(user).FieldByName("Password")

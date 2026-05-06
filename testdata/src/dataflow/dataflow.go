@@ -234,6 +234,144 @@ func testCombinationParameterAndReturn() {
 	logPassword(user)
 }
 
+// Test Cases for Multi-value Return Values (TC-021 to TC-026)
+
+func getPasswordAndErr(user User) (string, error) {
+	return user.Password, nil
+}
+
+func testMultiValueReturnBasic() {
+	// TC-021: Multi-value return, sensitive at position 0
+	user := User{Name: "alice2", Password: "secret"}
+	password, err := getPasswordAndErr(user)
+	_ = err
+	slog.Info("msg", password) // want "variable \"password\" contains sensitive field \"User.Password\""
+}
+
+func testMultiValueReturnErrNotFlagged() {
+	// TC-022: Position 1 (error) must NOT be flagged
+	user := User{Name: "bob2", Password: "secret"}
+	_, err := getPasswordAndErr(user)
+	slog.Info("msg", "err", fmt.Sprintf("%v", err)) // Should NOT be detected
+}
+
+func getAPIKeyAndRegion(config Config) (string, string) {
+	return config.APIKey, config.Region
+}
+
+func testMultiValueReturnBothPositions() {
+	// TC-023: Position 0 sensitive, position 1 not sensitive
+	config := Config{APIKey: "key123", Region: "us-east-1"}
+	key, region := getAPIKeyAndRegion(config)
+	slog.Info("msg", key)    // want "variable \"key\" contains sensitive field \"Config.APIKey\""
+	slog.Info("msg", region) // Should NOT be detected
+}
+
+func testMultiValueReturnTwoHop() {
+	// TC-024: Two-hop chain: v, err := f() → w := v → log(w)
+	user := User{Name: "charlie2", Password: "secret"}
+	password, err := getPasswordAndErr(user)
+	_ = err
+	w := password
+	slog.Info("msg", w) // want "variable \"w\" contains sensitive field \"User.Password\""
+}
+
+func logMultiValueParam(val string) {
+	slog.Info("msg", val) // want "variable .val. contains sensitive field .User.Password."
+}
+
+func testMultiValueReturnPassToFunction() {
+	// TC-025: Multi-value return value passed to function
+	user := User{Name: "dave2", Password: "secret"}
+	password, err := getPasswordAndErr(user)
+	_ = err
+	logMultiValueParam(password)
+}
+
+func testMultiValueReturnLogPackage() {
+	// TC-026: Multi-value return with log package
+	user := User{Name: "eve2", Password: "secret"}
+	password, err := getPasswordAndErr(user)
+	_ = err
+	log.Println(password) // want "variable \"password\" contains sensitive field \"User.Password\""
+}
+
+// Test Cases for 3+ Return Values (TC-027 to TC-032)
+
+func getNamePasswordErr(user User) (string, string, error) {
+	return user.Name, user.Password, nil
+}
+
+func testThreeReturnSensitiveAtPosition1() {
+	// TC-027: 3 returns, sensitive at position 1 (middle)
+	user := User{Name: "frank2", Password: "secret"}
+	name, password, err := getNamePasswordErr(user)
+	_ = err
+	slog.Info("msg", name)     // Should NOT be detected (position 0, Name is not sensitive)
+	slog.Info("msg", password) // want "variable \"password\" contains sensitive field \"User.Password\""
+}
+
+func getPasswordNameErr(user User) (string, string, error) {
+	return user.Password, user.Name, nil
+}
+
+func testThreeReturnSensitiveAtPosition0() {
+	// TC-028: 3 returns, sensitive at position 0
+	user := User{Name: "grace2", Password: "secret"}
+	password, name, err := getPasswordNameErr(user)
+	_ = err
+	slog.Info("msg", password) // want "variable \"password\" contains sensitive field \"User.Password\""
+	slog.Info("msg", name)     // Should NOT be detected
+}
+
+func getErrNamePassword(user User) (error, string, string) {
+	return nil, user.Name, user.Password
+}
+
+func testThreeReturnSensitiveAtPosition2() {
+	// TC-029: 3 returns, sensitive at last position
+	user := User{Name: "henry2", Password: "secret"}
+	err, name, password := getErrNamePassword(user)
+	_ = err
+	slog.Info("msg", name)     // Should NOT be detected
+	slog.Info("msg", password) // want "variable \"password\" contains sensitive field \"User.Password\""
+}
+
+func getAPIKeyRegionErr(config Config) (string, string, error) {
+	return config.APIKey, config.Region, nil
+}
+
+func testThreeReturnNonSensitiveNotFlagged() {
+	// TC-030: 3 returns, non-sensitive positions must not be flagged
+	config := Config{APIKey: "key123", Region: "us-east-1"}
+	key, region, err := getAPIKeyRegionErr(config)
+	_ = err
+	slog.Info("msg", key)    // want "variable \"key\" contains sensitive field \"Config.APIKey\""
+	slog.Info("msg", region) // Should NOT be detected
+}
+
+func getPasswordAPIKeyName(user User, config Config) (string, string, string) {
+	return user.Password, config.APIKey, user.Name
+}
+
+func testThreeReturnMultipleSensitive() {
+	// TC-031: 3 returns, multiple positions sensitive
+	user := User{Name: "iris2", Password: "secret"}
+	config := Config{APIKey: "key456", Region: "eu-west-1"}
+	password, key, name := getPasswordAPIKeyName(user, config)
+	slog.Info("msg", password) // want "variable \"password\" contains sensitive field \"User.Password\""
+	slog.Info("msg", key)      // want "variable \"key\" contains sensitive field \"Config.APIKey\""
+	slog.Info("msg", name)     // Should NOT be detected
+}
+
+func testThreeReturnBlankIdentifiers() {
+	// TC-032: Blank identifiers for sensitive positions must not cause errors
+	user := User{Name: "jack2", Password: "secret"}
+	_, password, err := getNamePasswordErr(user)
+	_ = err
+	slog.Info("msg", password) // want "variable \"password\" contains sensitive field \"User.Password\""
+}
+
 // Negative Test Cases (TC-101 to TC-112)
 
 func testNonSensitiveField() {
@@ -365,6 +503,20 @@ func main() {
 	testMethodReturnValue()
 	testReturnValueUsedViaVariable()
 	testCombinationParameterAndReturn()
+
+	testMultiValueReturnBasic()
+	testMultiValueReturnErrNotFlagged()
+	testMultiValueReturnBothPositions()
+	testMultiValueReturnTwoHop()
+	testMultiValueReturnPassToFunction()
+	testMultiValueReturnLogPackage()
+
+	testThreeReturnSensitiveAtPosition1()
+	testThreeReturnSensitiveAtPosition0()
+	testThreeReturnSensitiveAtPosition2()
+	testThreeReturnNonSensitiveNotFlagged()
+	testThreeReturnMultipleSensitive()
+	testThreeReturnBlankIdentifiers()
 
 	testNonSensitiveField()
 	testLiteralValue()

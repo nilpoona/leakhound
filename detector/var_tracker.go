@@ -14,8 +14,9 @@ type VarTracker struct {
 	analyzer *DataFlowAnalyzer
 
 	// Tracking maps (shared with FactCollector and DataFlowAnalyzer)
-	sensitiveVars  map[*types.Var]SensitiveSource
-	sensitiveFuncs map[types.Object]SensitiveSource
+	sensitiveVars    map[*types.Var]SensitiveSource
+	sensitiveFuncs   map[types.Object]SensitiveSource
+	sensitiveFuncPos map[sensitiveReturnKey]SensitiveSource
 }
 
 // NewVarTracker creates a new VarTracker
@@ -23,6 +24,7 @@ func NewVarTracker(pass *analysis.Pass, sensitiveFields map[sensitiveField]bool)
 	// Create shared maps
 	sensitiveVars := make(map[*types.Var]SensitiveSource)
 	sensitiveFuncs := make(map[types.Object]SensitiveSource)
+	sensitiveFuncPos := make(map[sensitiveReturnKey]SensitiveSource)
 	sensitiveParams := make(map[*types.Var]SensitiveSource)
 	funcDefs := make(map[types.Object]*ast.FuncDecl)
 
@@ -32,11 +34,12 @@ func NewVarTracker(pass *analysis.Pass, sensitiveFields map[sensitiveField]bool)
 	}
 
 	facts := &FactCollector{
-		checker:         checker,
-		sensitiveVars:   sensitiveVars,
-		sensitiveFuncs:  sensitiveFuncs,
-		sensitiveParams: sensitiveParams,
-		funcDefs:        funcDefs,
+		checker:          checker,
+		sensitiveVars:    sensitiveVars,
+		sensitiveFuncs:   sensitiveFuncs,
+		sensitiveFuncPos: sensitiveFuncPos,
+		sensitiveParams:  sensitiveParams,
+		funcDefs:         funcDefs,
 	}
 
 	analyzer := &DataFlowAnalyzer{
@@ -49,11 +52,12 @@ func NewVarTracker(pass *analysis.Pass, sensitiveFields map[sensitiveField]bool)
 	}
 
 	return &VarTracker{
-		checker:        checker,
-		facts:          facts,
-		analyzer:       analyzer,
-		sensitiveVars:  sensitiveVars,
-		sensitiveFuncs: sensitiveFuncs,
+		checker:          checker,
+		facts:            facts,
+		analyzer:         analyzer,
+		sensitiveVars:    sensitiveVars,
+		sensitiveFuncs:   sensitiveFuncs,
+		sensitiveFuncPos: sensitiveFuncPos,
 	}
 }
 
