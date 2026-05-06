@@ -97,9 +97,9 @@ func (r *Reporter) buildResults(findings []detector.Finding) []Result {
 func (r *Reporter) buildResult(f detector.Finding) Result {
 	pos := r.pass.Fset.Position(f.Pos)
 	relPath := r.relativePath(pos.Filename)
-	sarifRuleID := ToSARIFRuleID(f.RuleID)
+	sarifRuleID := f.SARIFRuleID()
 
-	return Result{
+	result := Result{
 		RuleID: sarifRuleID,
 		Message: Message{
 			Text: f.Message,
@@ -121,6 +121,12 @@ func (r *Reporter) buildResult(f detector.Finding) Result {
 		Level:               "error",
 		PartialFingerprints: r.buildFingerprints(relPath, pos.Line, sarifRuleID),
 	}
+
+	if f.Suppressed {
+		result.Suppressions = []Suppression{{Kind: f.SuppressionKind, State: "accepted"}}
+	}
+
+	return result
 }
 
 // buildFingerprints generates stable fingerprints for result matching

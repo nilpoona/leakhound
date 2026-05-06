@@ -15,6 +15,7 @@ data leaks in logs.
   - **Data Flow Analysis**: Tracks sensitive data through variables, function parameters, and return values
   - Detects if struct fields tagged with `sensitive:"true"` are being output by logging functions
   - Supports multiple logging packages: `log/slog`, `log`, and `fmt`
+  - **Suppression**: Suppress specific findings with `//noleak:LH0003` inline comments or globally via config
   - **Configurable**: Add support for third-party logging libraries (zap, zerolog, logrus, etc.) via YAML configuration
   - Zero runtime overhead (static analysis only)
 
@@ -210,13 +211,18 @@ targets:
         names:                            # Method names
           - "Info"
           - "Debug"
+
+suppress:
+  rules:                                  # Rule IDs to suppress globally (optional)
+    - "LH0003"
 ```
 
 **Requirements**:
-- At least one of `functions` or `methods` must be specified
+- At least one of `functions` or `methods` must be specified per target
 - Package paths must be lowercase: `a-z`, `0-9`, `.`, `-`, `/`
 - Function and method names must be valid Go identifiers
 - Receiver types can be pointer (`*Logger`) or value (`Logger`)
+- `suppress.rules` values must be one of: `LH0001`, `LH0002`, `LH0003`, `LH0004`
 
 **Limits** (to prevent abuse):
 - Maximum 20 targets
@@ -225,6 +231,48 @@ targets:
 - Maximum 50 method names per method config
 
 See [examples/](examples/) for more configuration examples.
+
+## Suppression
+
+Sometimes a specific finding is intentional or already handled upstream. leakhound provides two ways to suppress findings.
+
+### Inline comment suppression
+
+Place a `//noleak:RULE_ID` directive on the **same line** as the flagged statement, or on the **immediately preceding line**:
+
+```go
+// Same-line suppression
+slog.Info("user", u) //noleak:LH0003
+
+// Preceding-line suppression (useful for multi-line calls)
+//noleak:LH0003
+slog.Info(
+    "user",
+    u,
+)
+
+// Suppress all rules on this line
+slog.Info("user", u) //noleak:all
+
+// Trailing explanation is allowed
+slog.Info("user", u) //noleak:LH0003 MaskedUser applied upstream
+```
+
+> **Note**: `// noleak:` (space after `//`) is not recognised. The directive must start with `//noleak:`.
+
+### Config-level suppression
+
+To suppress a rule globally across the entire project, add it to `.leakhound.yaml`:
+
+```yaml
+suppress:
+  rules:
+    - "LH0003"   # never report struct-level findings
+```
+
+Valid values: `LH0001`, `LH0002`, `LH0003`, `LH0004`.
+
+Config-level suppressions appear in SARIF output with `kind: "external"`; inline comment suppressions appear with `kind: "inSource"`.
 
 ## Advanced Detection: Data Flow Tracking
 
@@ -445,11 +493,20 @@ fmt.Printf("secret: %s", wrapConfig.Config.Secret) // Detects nested field acces
 ```
 
 ## Example Detection Output
+Each finding includes a rule ID suffix (`[LH0001]`–`[LH0004]`) so you know which ID to use in a suppression directive:
+
 ```bash
 $ leakhound ./...
-./main.go:15:2: sensitive field 'User.Password' should not be logged (tagged with sensitive:"true")
-./main.go:18:27: variable "password" contains sensitive field "User.Password" (tagged with sensitive:"true")
-./main.go:23:19: variable "val" contains sensitive field "User.Password" (tagged with sensitive:"true")
-./config.go:34:19: function call returns sensitive field "Config.APIKey" (tagged with sensitive:"true")
-./user.go:10:14: struct 'User' contains sensitive fields and should not be logged entirely
+./main.go:15:2: sensitive field 'User.Password' should not be logged (tagged with sensitive:"true") [LH0004]
+./main.go:18:27: variable "password" contains sensitive field "User.Password" (tagged with sensitive:"true") [LH0001]
+./main.go:23:19: variable "val" contains sensitive field "User.Password" (tagged with sensitive:"true") [LH0001]
+./config.go:34:19: function call returns sensitive field "Config.APIKey" (tagged with sensitive:"true") [LH0002]
+./user.go:10:14: struct 'User' contains sensitive fields and should not be logged entirely [LH0003]
 ```
+
+| Rule ID | Meaning |
+|---------|---------|
+| LH0001 | Variable contains sensitive data |
+| LH0002 | Function call returns sensitive data |
+| LH0003 | Struct with sensitive fields logged entirely |
+| LH0004 | Sensitive struct field directly accessed |

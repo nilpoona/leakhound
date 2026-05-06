@@ -60,6 +60,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// Phase 2: Detection (returns findings)
 	findings := collector.Analyze()
 
+	// Phase 2.5: Apply suppression filter (inline comments + config rules)
+	filter := &detector.SuppressionFilter{}
+	filter.Build(pass.Files, pass.Fset)
+	findings = filter.Apply(findings, pass.Fset, &cfg)
+
 	// For text format, report immediately
 	// For SARIF format, the custom driver in cmd/leakhound/main.go handles output
 	if outputFormat != "sarif" {

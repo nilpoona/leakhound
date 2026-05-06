@@ -3,65 +3,9 @@ package sarif
 import (
 	"reflect"
 	"testing"
+
+	"github.com/nilpoona/leakhound/detector"
 )
-
-func TestToSARIFRuleID(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name           string
-		detectorRuleID string
-		want           string
-	}{
-		{
-			name:           "sensitive-var maps to LH0001",
-			detectorRuleID: "sensitive-var",
-			want:           "LH0001",
-		},
-		{
-			name:           "sensitive-call maps to LH0002",
-			detectorRuleID: "sensitive-call",
-			want:           "LH0002",
-		},
-		{
-			name:           "sensitive-struct maps to LH0003",
-			detectorRuleID: "sensitive-struct",
-			want:           "LH0003",
-		},
-		{
-			name:           "sensitive-field maps to LH0004",
-			detectorRuleID: "sensitive-field",
-			want:           "LH0004",
-		},
-		{
-			name:           "unknown rule ID returns as-is",
-			detectorRuleID: "unknown-rule",
-			want:           "unknown-rule",
-		},
-		{
-			name:           "empty string returns as-is",
-			detectorRuleID: "",
-			want:           "",
-		},
-		{
-			name:           "similar but different rule ID returns as-is",
-			detectorRuleID: "sensitive-variable",
-			want:           "sensitive-variable",
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt // capture range variable
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			got := ToSARIFRuleID(tt.detectorRuleID)
-			if got != tt.want {
-				t.Errorf("ToSARIFRuleID(%q) = %q, want %q", tt.detectorRuleID, got, tt.want)
-			}
-		})
-	}
-}
 
 func TestBuildRules(t *testing.T) {
 	t.Parallel()
@@ -319,9 +263,9 @@ func TestRuleIDMapping(t *testing.T) {
 		t.Run(tt.detectorID, func(t *testing.T) {
 			t.Parallel()
 
-			got := ToSARIFRuleID(tt.detectorID)
+			got := detector.ToSARIFRuleID(tt.detectorID)
 			if got != tt.sarifID {
-				t.Errorf("ToSARIFRuleID(%q) = %q, want %q", tt.detectorID, got, tt.sarifID)
+				t.Errorf("detector.ToSARIFRuleID(%q) = %q, want %q", tt.detectorID, got, tt.sarifID)
 			}
 		})
 	}
