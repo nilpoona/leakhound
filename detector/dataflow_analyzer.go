@@ -79,38 +79,35 @@ func (da *DataFlowAnalyzer) analyzeFunctionCalls(funcObj types.Object, funcDecl 
 		}
 
 		// Map arguments to parameters
-		params := calledFuncDecl.Type.Params.List
-		paramIdx := 0
+		// Build a flat list of parameter names
+		var paramNames []*ast.Ident
+		for _, field := range calledFuncDecl.Type.Params.List {
+			paramNames = append(paramNames, field.Names...)
+		}
 
-		for _, arg := range call.Args {
-			if paramIdx >= len(params) {
+		// Map each argument to its corresponding parameter
+		for argIdx, arg := range call.Args {
+			if argIdx >= len(paramNames) {
 				break
 			}
 
-			param := params[paramIdx]
+			paramName := paramNames[argIdx]
 
 			// Check if this argument is sensitive
 			if source := da.checker.checkSensitiveExpr(arg, da.sensitiveVars, da.sensitiveFuncs); source != nil {
-				// Mark each parameter name as sensitive
-				for _, paramName := range param.Names {
-					if paramObj := da.checker.pass.TypesInfo.Defs[paramName]; paramObj != nil {
-						if v, ok := paramObj.(*types.Var); ok {
-							// Create new source with updated flow path
-							newSource := SensitiveSource{
-								FieldName: source.FieldName,
-								Position:  arg.Pos(),
-								FlowPath:  append(append([]string{}, source.FlowPath...), fmt.Sprintf("parameter '%s'", paramName.Name)),
-							}
-							da.sensitiveParams[v] = newSource
-							da.sensitiveVars[v] = newSource
+				// Mark the corresponding parameter as sensitive
+				if paramObj := da.checker.pass.TypesInfo.Defs[paramName]; paramObj != nil {
+					if v, ok := paramObj.(*types.Var); ok {
+						// Create new source with updated flow path
+						newSource := SensitiveSource{
+							FieldName: source.FieldName,
+							Position:  arg.Pos(),
+							FlowPath:  append(append([]string{}, source.FlowPath...), fmt.Sprintf("parameter '%s'", paramName.Name)),
 						}
+						da.sensitiveParams[v] = newSource
+						da.sensitiveVars[v] = newSource
 					}
 				}
-			}
-
-			// Move to next parameter
-			if len(param.Names) > 0 {
-				paramIdx++
 			}
 		}
 
