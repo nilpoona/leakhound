@@ -655,6 +655,131 @@ func test() {
 	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
 }
 
+// TC-12: Multiple parameters with same type — only sensitive parameter should be tracked
+//
+// This test verifies the fix for the parameter mapping bug where functions like
+// `func f(a, b string)` would incorrectly mark ALL parameters as sensitive when
+// only one argument was sensitive.
+//
+// Before fix: Both `secret` and `name` were marked as sensitive
+// After fix: Only `secret` is marked as sensitive
+func TestVarTracker_MultipleParams_OnlySensitiveTracked(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Name     string
+	Password string %s
+}
+
+func sink(v string) {}
+
+func logTwoParams(secret, name string) {
+	sink(secret) // want "sensitive var: secret from User.Password"
+	sink(name)   // name should NOT be flagged as sensitive
+}
+
+func test() {
+	u := User{Name: "alice", Password: "secret123"}
+	logTwoParams(u.Password, u.Name)
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-13: Multiple parameters with same type — sensitive at second position
+//
+// This test verifies that parameter mapping works correctly when the sensitive
+// argument is in the second position.
+func TestVarTracker_MultipleParams_SensitiveAtSecondPosition(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Name     string
+	Password string %s
+}
+
+func sink(v string) {}
+
+func logTwoParams(name, secret string) {
+	sink(name)   // name should NOT be flagged as sensitive
+	sink(secret) // want "sensitive var: secret from User.Password"
+}
+
+func test() {
+	u := User{Name: "alice", Password: "secret123"}
+	logTwoParams(u.Name, u.Password)
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-14: Three parameters with same type — only middle one is sensitive
+//
+// This test verifies parameter mapping with three parameters where only the
+// middle one receives sensitive data.
+func TestVarTracker_ThreeParams_SensitiveAtMiddle(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Name     string
+	Password string %s
+	Email    string
+}
+
+func sink(v string) {}
+
+func logThreeParams(name, secret, email string) {
+	sink(name)   // not sensitive
+	sink(secret) // want "sensitive var: secret from User.Password"
+	sink(email)  // not sensitive
+}
+
+func test() {
+	u := User{Name: "alice", Password: "secret123", Email: "alice@example.com"}
+	logThreeParams(u.Name, u.Password, u.Email)
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
+// TC-15: Mixed parameter declaration styles
+//
+// This test verifies parameter mapping with mixed declaration styles:
+// - First two params share the same type declaration (a, b string)
+// - Third param has separate type declaration (c int)
+func TestVarTracker_MixedParamDeclaration(t *testing.T) {
+	src := fmt.Sprintf(`package vartest
+
+type User struct {
+	Name     string
+	Password string %s
+	Age      int
+}
+
+func sink(v string) {}
+
+func logMixedParams(name, secret string, age int) {
+	sink(name)   // not sensitive
+	sink(secret) // want "sensitive var: secret from User.Password"
+	// age is int, so no sink() call
+}
+
+func test() {
+	u := User{Name: "alice", Password: "secret123", Age: 30}
+	logMixedParams(u.Name, u.Password, u.Age)
+}
+`, sensitiveStructTag())
+
+	dir := writeTempPkg(t, "vartest", src)
+	analysistest.Run(t, dir, sinkAnalyzer, "vartest")
+}
+
 // TC-11: Verify that GetSensitiveVars returns the sensitiveVars map (query API verification)
 //
 // This test directly checks VarTracker's internal state rather than using sinkAnalyzer.
