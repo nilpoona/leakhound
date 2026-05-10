@@ -83,7 +83,7 @@ func logInGroup(secret, name string) {
 	slog.Info("grouped data",
 		slog.Group("info",
 			"secret", secret, // want "variable \"secret\" contains sensitive field \"User.Password\""
-			"name", name,     // name should NOT be flagged (bug fix verification)
+			"name", name, // name should NOT be flagged (bug fix verification)
 		),
 	)
 }
