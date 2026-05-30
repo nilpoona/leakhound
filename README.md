@@ -13,6 +13,7 @@ data leaks in logs.
 
 ## Features
   - **Data Flow Analysis**: Tracks sensitive data through variables, function parameters, and return values
+  - **Cross-Package Tracking**: Follows sensitive values across import boundaries — flags both sensitive return values (LH0005) and sink parameters (LH0006) in other packages
   - Detects if struct fields tagged with `sensitive:"true"` are being output by logging functions
   - Supports multiple logging packages: `log/slog`, `log`, and `fmt`
   - **Suppression**: Suppress specific findings with `//noleak:LH0003` inline comments or globally via config
@@ -54,12 +55,17 @@ type Config struct {
 ### 2. Run static analysis
 #### Run as a CLI tool
 ```bash
-# Inspect the current directory
+# Inspect the current directory (whole-program: cross-package tracking enabled)
 leakhound ./...
 
 # Inspect a specific package
 leakhound ./internal/...
+
+# Per-package mode (legacy, no cross-package tracking — useful for go vet style integrations)
+leakhound --single-package ./...
 ```
+
+By default leakhound runs in **whole-program mode**, loading the target packages plus their transitive dependencies (`packages.Load` with `NeedDeps`) so it can follow sensitive values across import boundaries. Use `--single-package` to fall back to the per-package driver if you need `go vet`-compatible output.
 
 #### Output Formats
 `leakhound` supports multiple output formats for different use cases:
@@ -222,7 +228,7 @@ suppress:
 - Package paths must be lowercase: `a-z`, `0-9`, `.`, `-`, `/`
 - Function and method names must be valid Go identifiers
 - Receiver types can be pointer (`*Logger`) or value (`Logger`)
-- `suppress.rules` values must be one of: `LH0001`, `LH0002`, `LH0003`, `LH0004`
+- `suppress.rules` values must be one of: `LH0001`, `LH0002`, `LH0003`, `LH0004`, `LH0005`, `LH0006`
 
 **Limits** (to prevent abuse):
 - Maximum 20 targets
@@ -270,7 +276,7 @@ suppress:
     - "LH0003"   # never report struct-level findings
 ```
 
-Valid values: `LH0001`, `LH0002`, `LH0003`, `LH0004`.
+Valid values: `LH0001`, `LH0002`, `LH0003`, `LH0004`, `LH0005`, `LH0006`.
 
 Config-level suppressions appear in SARIF output with `kind: "external"`; inline comment suppressions appear with `kind: "inSource"`.
 
@@ -311,6 +317,21 @@ password := user.Password
 outer(password)  // Tracks up to 5 levels deep
 ```
 
+### Cross-Package Tracking (whole-program mode)
+```go
+// pkg secret
+func GetPassword(u User) string { return u.Password }
+func LogIt(p string) { slog.Info("p", "v", p) }
+
+// pkg app
+import "example.com/myapp/secret"
+
+slog.Info("pw", "v", secret.GetPassword(u))  // ⚠️ LH0005 (sensitive return)
+secret.LogIt(u.Password)                      // ⚠️ LH0006 (sensitive sink)
+```
+
+Cross-package tracking is enabled by default; use `--single-package` to disable.
+
 ### Return Values
 ```go
 // ✅ Single return value tracking
@@ -340,11 +361,6 @@ Due to the nature of static analysis, there are the following limitations:
 
 ### Cases that cannot be detected
 ```go
-// ❌ Cross-package function calls (out of scope)
-import "github.com/external/pkg"
-password := user.Password
-pkg.ProcessData(password)  // Not tracked
-
 // ❌ Variadic arguments (out of scope)
 func logMultiple(vals ...string) {
     for _, v := range vals {
@@ -493,7 +509,7 @@ fmt.Printf("secret: %s", wrapConfig.Config.Secret) // Detects nested field acces
 ```
 
 ## Example Detection Output
-Each finding includes a rule ID suffix (`[LH0001]`–`[LH0004]`) so you know which ID to use in a suppression directive:
+Each finding includes a rule ID suffix (`[LH0001]`–`[LH0006]`) so you know which ID to use in a suppression directive:
 
 ```bash
 $ leakhound ./...
@@ -502,6 +518,8 @@ $ leakhound ./...
 ./main.go:23:19: variable "val" contains sensitive field "User.Password" (tagged with sensitive:"true") [LH0001]
 ./config.go:34:19: function call returns sensitive field "Config.APIKey" (tagged with sensitive:"true") [LH0002]
 ./user.go:10:14: struct 'User' contains sensitive fields and should not be logged entirely [LH0003]
+./app.go:13:25: cross-package function call returns sensitive field "User.Password" (callee in "example.com/secret") [LH0005]
+./app.go:20:15: sensitive field "User.Password" is passed to cross-package function "LogIt" whose parameter "payload" is logged downstream [LH0006]
 ```
 
 | Rule ID | Meaning |
@@ -510,3 +528,5 @@ $ leakhound ./...
 | LH0002 | Function call returns sensitive data |
 | LH0003 | Struct with sensitive fields logged entirely |
 | LH0004 | Sensitive struct field directly accessed |
+| LH0005 | Cross-package function returns sensitive data (logged in caller) |
+| LH0006 | Sensitive value passed to cross-package function that logs the parameter |

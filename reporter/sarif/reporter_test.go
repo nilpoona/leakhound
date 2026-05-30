@@ -196,8 +196,8 @@ func TestReporter_Report(t *testing.T) {
 				if run.Tool.Driver.Name != "leakhound" {
 					t.Errorf("tool name = %q, want %q", run.Tool.Driver.Name, "leakhound")
 				}
-				if len(run.Tool.Driver.Rules) != 4 {
-					t.Errorf("rules count = %d, want 4", len(run.Tool.Driver.Rules))
+				if len(run.Tool.Driver.Rules) != 6 {
+					t.Errorf("rules count = %d, want 6", len(run.Tool.Driver.Rules))
 				}
 
 				wantAutomation := &AutomationDetails{

@@ -10,10 +10,12 @@ import (
 
 // Rule ID constants for different types of findings
 const (
-	RuleIDSensitiveVar    = "sensitive-var"
-	RuleIDSensitiveCall   = "sensitive-call"
-	RuleIDSensitiveStruct = "sensitive-struct"
-	RuleIDSensitiveField  = "sensitive-field"
+	RuleIDSensitiveVar            = "sensitive-var"
+	RuleIDSensitiveCall           = "sensitive-call"
+	RuleIDSensitiveStruct         = "sensitive-struct"
+	RuleIDSensitiveField          = "sensitive-field"
+	RuleIDCrossPkgSensitiveReturn = "cross-pkg-sensitive-return"
+	RuleIDCrossPkgSensitiveSink   = "cross-pkg-sensitive-sink"
 )
 
 // Detector handles detection of sensitive data leaks

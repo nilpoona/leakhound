@@ -58,6 +58,8 @@ var validSARIFRuleIDs = map[string]bool{
 	"LH0002": true,
 	"LH0003": true,
 	"LH0004": true,
+	"LH0005": true,
+	"LH0006": true,
 }
 
 // LoadConfig loads the configuration file from the specified path.
@@ -154,7 +156,7 @@ func ValidateConfig(config *Config) error {
 	// Validate suppress.rules
 	for _, ruleID := range config.Suppress.Rules {
 		if !validSARIFRuleIDs[ruleID] {
-			return fmt.Errorf("suppress.rules: invalid rule ID %q (valid values: LH0001, LH0002, LH0003, LH0004)", ruleID)
+			return fmt.Errorf("suppress.rules: invalid rule ID %q (valid values: LH0001, LH0002, LH0003, LH0004, LH0005, LH0006)", ruleID)
 		}
 	}
 

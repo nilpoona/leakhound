@@ -14,11 +14,24 @@ type FieldCollector struct {
 	sensitiveFields map[sensitiveField]bool
 }
 
-// NewFieldCollector creates a new FieldCollector
+// NewFieldCollector creates a new FieldCollector with private state.
 func NewFieldCollector(pass *analysis.Pass) *FieldCollector {
 	return &FieldCollector{
 		pass:            pass,
 		sensitiveFields: make(map[sensitiveField]bool),
+	}
+}
+
+// NewFieldCollectorWithFields creates a FieldCollector that writes into a
+// shared sensitive-field map. Used by whole-program mode so multiple packages
+// contribute to the same accumulator.
+func NewFieldCollectorWithFields(pass *analysis.Pass, fields map[sensitiveField]bool) *FieldCollector {
+	if fields == nil {
+		fields = make(map[sensitiveField]bool)
+	}
+	return &FieldCollector{
+		pass:            pass,
+		sensitiveFields: fields,
 	}
 }
 
