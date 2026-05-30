@@ -124,8 +124,8 @@ func TestWholeProgramCrossPackage(t *testing.T) {
 
 func flattenForTest(roots []*packages.Package) []*packages.Package {
 	seen := make(map[string]*packages.Package)
-	var visit func(p *packages.Package)
-	visit = func(p *packages.Package) {
+	var visit func(p *packages.Package, isRoot bool)
+	visit = func(p *packages.Package, isRoot bool) {
 		if p == nil {
 			return
 		}
@@ -135,13 +135,20 @@ func flattenForTest(roots []*packages.Package) []*packages.Package {
 		if p.TypesInfo == nil || p.Types == nil {
 			return
 		}
+		// Mirror the CLI driver: stdlib deps are excluded from the WorldView
+		// (detection still works because slog/log/fmt calls resolve via type
+		// info at the call site). Keeping this in sync proves cross-package
+		// detection does not depend on stdlib being loaded.
+		if !isRoot && detector.IsStdlibPackagePath(p.PkgPath) {
+			return
+		}
 		seen[p.PkgPath] = p
 		for _, imp := range p.Imports {
-			visit(imp)
+			visit(imp, false)
 		}
 	}
 	for _, r := range roots {
-		visit(r)
+		visit(r, true)
 	}
 	out := make([]*packages.Package, 0, len(seen))
 	for _, p := range seen {

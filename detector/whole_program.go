@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
+	"sort"
+	"strings"
 
 	"github.com/nilpoona/leakhound/config"
 	"golang.org/x/tools/go/analysis"
@@ -86,8 +88,10 @@ func (wp *WholeProgramCollector) Collect() {
 }
 
 // Analyze runs Phase 3: detection over collected log calls and a separate
-// scan for cross-package sink call sites (LH0006). Returns findings in
-// deterministic order (per package iteration order, then call position).
+// scan for cross-package sink call sites (LH0006). Findings are returned
+// sorted by source position (filename, line, column, then rule ID) so output
+// is stable across runs regardless of the map-iteration order in which
+// packages and function decls are visited.
 func (wp *WholeProgramCollector) Analyze() []Finding {
 	var findings []Finding
 	for _, lc := range wp.logCalls {
@@ -100,7 +104,34 @@ func (wp *WholeProgramCollector) Analyze() []Finding {
 		}
 	}
 	findings = append(findings, wp.detectCrossPkgSinks()...)
+	wp.sortFindings(findings)
 	return findings
+}
+
+// sortFindings orders findings by resolved source position, with the rule ID
+// as a final tiebreaker. The raw token.Pos cannot be compared directly because
+// offsets depend on the order files were added to the FileSet — and that order
+// follows map iteration over packages, which is non-deterministic. Resolving to
+// (filename, line, column) makes the ordering reproducible.
+func (wp *WholeProgramCollector) sortFindings(findings []Finding) {
+	fset := wp.world.Fset
+	if fset == nil {
+		return
+	}
+	sort.SliceStable(findings, func(i, j int) bool {
+		pi := fset.Position(findings[i].Pos)
+		pj := fset.Position(findings[j].Pos)
+		if pi.Filename != pj.Filename {
+			return pi.Filename < pj.Filename
+		}
+		if pi.Line != pj.Line {
+			return pi.Line < pj.Line
+		}
+		if pi.Column != pj.Column {
+			return pi.Column < pj.Column
+		}
+		return findings[i].RuleID < findings[j].RuleID
+	})
 }
 
 // detectCrossPkgSinks walks every known function body once and reports
@@ -157,44 +188,76 @@ func (wp *WholeProgramCollector) checkArg(c *DataFlowCollector, lc wholeProgramL
 }
 
 // analyzeCrossPackage runs the convergence-based data flow + sink propagation
-// over the world's funcDefs. It replaces the single-package 5-pass
-// heuristic with a workset that iterates until no facts change, satisfying
-// design doc §7(d).
+// over the world's funcDefs, satisfying design doc §7(d).
+//
+// It is driven by the static CallGraph rather than a fixed-point loop that
+// re-walks every function on every round: a function is (re)processed only when
+// a fact it depends on changes. The two dependency edges are
+//   - forward: making callee G's parameter sensitive may let G propagate it
+//     further, so G is re-enqueued;
+//   - backward: making this function's own parameter a sink may let its callers
+//     mark their parameters as sinks, so CallersOf(this) are re-enqueued.
+//
+// Because both sinkParams and sensitiveParams only ever grow (monotone), and
+// every re-enqueue corresponds to a concrete state change, the worklist is
+// guaranteed to terminate at the same fixpoint the old all-pairs loop reached.
 func (wp *WholeProgramCollector) analyzeCrossPackage() {
 	// Seed direct sinks: params used inside their owning function's body
 	// directly as arguments to a logging call.
 	wp.seedDirectSinks()
 
-	// Build static call graph as we go (used for back-propagation of sink
-	// facts).
+	// Build the static call graph; CallersOf drives sink back-propagation.
 	wp.buildCallGraph()
 
-	// Worklist iteration. We bound by funcCount*N to guard against pathological
-	// graphs, but in practice convergence is very fast.
-	const maxIters = 1024
-	for range maxIters {
-		changed := false
-		for funcObj, funcDecl := range wp.world.funcDefs {
-			if wp.propagateThroughFunc(funcObj, funcDecl) {
-				changed = true
-			}
-		}
-		if !changed {
+	queue := make([]types.Object, 0, len(wp.world.funcDefs))
+	inQueue := make(map[types.Object]bool, len(wp.world.funcDefs))
+	enqueue := func(obj types.Object) {
+		if obj == nil || inQueue[obj] {
 			return
+		}
+		// Only schedule functions whose body we actually hold; cross-package
+		// callees without a loaded decl (e.g. stdlib) cannot propagate.
+		if _, ok := wp.world.funcDefs[obj]; !ok {
+			return
+		}
+		inQueue[obj] = true
+		queue = append(queue, obj)
+	}
+
+	// Prime the worklist with every known function (one initial visit each,
+	// equivalent to the first full pass of the old loop).
+	for funcObj := range wp.world.funcDefs {
+		enqueue(funcObj)
+	}
+
+	// Safety bound: total meaningful work is bounded by the number of state
+	// changes (≤ 2×params) times graph fan-in, but cap defensively so a logic
+	// bug can never spin forever. Never expected to be hit in practice.
+	maxSteps := len(wp.world.funcDefs)*64 + 1<<16
+	for steps := 0; len(queue) > 0 && steps < maxSteps; steps++ {
+		obj := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
+		inQueue[obj] = false
+		for _, dep := range wp.propagateThroughFunc(obj, wp.world.funcDefs[obj]) {
+			enqueue(dep)
 		}
 	}
 }
 
 // propagateThroughFunc walks one function's body once, propagating sensitivity
-// forward (arg→param) and sink-ness backward (callee.param→caller.param).
-// Returns true when any world state changed.
-func (wp *WholeProgramCollector) propagateThroughFunc(callerObj types.Object, callerDecl *ast.FuncDecl) bool {
+// forward (arg→param) and sink-ness backward (callee.param→caller.param). It
+// returns the set of function objects whose facts changed as a result and
+// therefore need (re)processing:
+//   - each callee whose parameter newly became sensitive, and
+//   - when this function's own parameter newly became a sink, every caller of
+//     this function (via CallGraph.CallersOf).
+func (wp *WholeProgramCollector) propagateThroughFunc(callerObj types.Object, callerDecl *ast.FuncDecl) []types.Object {
 	if callerDecl == nil || callerDecl.Body == nil {
-		return false
+		return nil
 	}
 	callerPkg := wp.world.PackageOf(callerObj)
 	if callerPkg == nil || callerPkg.TypesInfo == nil {
-		return false
+		return nil
 	}
 	callerInfo := callerPkg.TypesInfo
 
@@ -202,7 +265,15 @@ func (wp *WholeProgramCollector) propagateThroughFunc(callerObj types.Object, ca
 	// our own param P" for sink back-propagation.
 	callerParams := paramSet(callerDecl, callerInfo)
 
-	changed := false
+	var toEnqueue []types.Object
+	callerParamBecameSink := false
+	markCallerSink := func(p *types.Var) {
+		if !wp.world.sinkParams[p] {
+			wp.world.sinkParams[p] = true
+			callerParamBecameSink = true
+		}
+	}
+
 	ast.Inspect(callerDecl.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -214,10 +285,7 @@ func (wp *WholeProgramCollector) propagateThroughFunc(callerObj types.Object, ca
 		if c := wp.pkgCollectors[callerPkg]; c != nil && c.LogDetector().IsLogCallWithInfo(call, callerInfo) {
 			for _, arg := range call.Args {
 				if p := identifiedParam(arg, callerInfo, callerParams); p != nil {
-					if !wp.world.sinkParams[p] {
-						wp.world.sinkParams[p] = true
-						changed = true
-					}
+					markCallerSink(p)
 				}
 			}
 			return true
@@ -249,7 +317,9 @@ func (wp *WholeProgramCollector) propagateThroughFunc(callerObj types.Object, ca
 						}
 						wp.world.sensitiveParams[paramVar] = newSource
 						wp.world.sensitiveVars[paramVar] = newSource
-						changed = true
+						// The callee now carries sensitivity inward; let it
+						// propagate from its own body.
+						toEnqueue = append(toEnqueue, calleeObj)
 					}
 				}
 			}
@@ -258,16 +328,23 @@ func (wp *WholeProgramCollector) propagateThroughFunc(callerObj types.Object, ca
 			// param at this index is a sink → caller's param is a sink.
 			if argIdx < len(calleeParams) && calleeParams[argIdx] != nil && wp.world.sinkParams[calleeParams[argIdx]] {
 				if p := identifiedParam(arg, callerInfo, callerParams); p != nil {
-					if !wp.world.sinkParams[p] {
-						wp.world.sinkParams[p] = true
-						changed = true
-					}
+					markCallerSink(p)
 				}
 			}
 		}
 		return true
 	})
-	return changed
+
+	// If this function's own parameter became a sink, its callers may now mark
+	// their arguments' parameters as sinks too — re-enqueue them via the graph.
+	if callerParamBecameSink {
+		if callerFunc, ok := callerObj.(*types.Func); ok {
+			for _, site := range wp.graph.CallersOf[callerFunc] {
+				toEnqueue = append(toEnqueue, site.Caller)
+			}
+		}
+	}
+	return toEnqueue
 }
 
 // seedDirectSinks finds params that are directly fed into a logging call
@@ -309,8 +386,9 @@ func (wp *WholeProgramCollector) seedDirectSinks() {
 }
 
 // buildCallGraph populates the static call graph from all known function
-// bodies. Used for diagnostics today; future SSA migration will replace it
-// with callgraph.CHA / VTA output (see design doc §7(c)).
+// bodies. CallersOf drives sink back-propagation in analyzeCrossPackage; a
+// future SSA migration will replace this with callgraph.CHA / VTA output
+// (see design doc §7(c)).
 func (wp *WholeProgramCollector) buildCallGraph() {
 	for funcObj, funcDecl := range wp.world.funcDefs {
 		callerFunc, ok := funcObj.(*types.Func)
@@ -567,6 +645,25 @@ func identifiedParam(arg ast.Expr, info *types.Info, params map[*types.Var]bool)
 		return nil
 	}
 	return obj
+}
+
+// IsStdlibPackagePath reports whether pkgPath belongs to the Go standard
+// library. The heuristic: a path is stdlib when its first segment contains no
+// dot (e.g. "fmt", "log/slog", "internal/abi"), whereas module paths always
+// carry a dotted domain in the first segment ("example.com/x", "github.com/y").
+//
+// Whole-program analysis excludes stdlib *dependencies* from the WorldView:
+// their bodies are never sinks we must propagate through — slog/log/fmt calls
+// are recognised directly from type information at the call site — so including
+// them only forces the cross-package worklist to re-walk large swaths of stdlib
+// on every convergence iteration. Root packages the user explicitly targets are
+// kept regardless.
+func IsStdlibPackagePath(pkgPath string) bool {
+	if pkgPath == "" {
+		return false
+	}
+	first, _, _ := strings.Cut(pkgPath, "/")
+	return !strings.Contains(first, ".")
 }
 
 // resolveCallee returns the *types.Object representing the function being

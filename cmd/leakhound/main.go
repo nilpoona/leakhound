@@ -149,8 +149,8 @@ func runWholeProgram(patterns []string, format, configPath string) error {
 // every package the user's code touches, not just the top-level patterns.
 func flattenWithDeps(roots []*packages.Package) []*packages.Package {
 	seen := make(map[string]*packages.Package)
-	var visit func(p *packages.Package)
-	visit = func(p *packages.Package) {
+	var visit func(p *packages.Package, isRoot bool)
+	visit = func(p *packages.Package, isRoot bool) {
 		if p == nil {
 			return
 		}
@@ -163,13 +163,21 @@ func flattenWithDeps(roots []*packages.Package) []*packages.Package {
 		if p.TypesInfo == nil || p.Types == nil {
 			return
 		}
+		// Skip standard-library dependencies: the cross-package worklist would
+		// otherwise re-scan every stdlib function body on each convergence
+		// iteration for no benefit (logging calls are detected directly via
+		// type info). Roots are always kept in case the user explicitly targets
+		// such a package.
+		if !isRoot && detector.IsStdlibPackagePath(p.PkgPath) {
+			return
+		}
 		seen[p.PkgPath] = p
 		for _, imp := range p.Imports {
-			visit(imp)
+			visit(imp, false)
 		}
 	}
 	for _, r := range roots {
-		visit(r)
+		visit(r, true)
 	}
 	out := make([]*packages.Package, 0, len(seen))
 	for _, p := range seen {
