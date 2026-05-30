@@ -34,13 +34,23 @@ func NewLogDetectorWithConfig(pass *analysis.Pass, cfg *config.Config) *LogDetec
 // IsLogCall checks if a call expression is a logging function call
 // This consolidates checks for slog, log, and fmt packages
 func (ld *LogDetector) IsLogCall(call *ast.CallExpr) bool {
+	return ld.IsLogCallWithInfo(call, ld.pass.TypesInfo)
+}
+
+// IsLogCallWithInfo behaves like IsLogCall but uses the supplied TypesInfo to
+// resolve identifiers, so it can be invoked on call expressions belonging to
+// another package (needed by whole-program analysis).
+func (ld *LogDetector) IsLogCallWithInfo(call *ast.CallExpr, info *types.Info) bool {
+	if info == nil {
+		return false
+	}
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return false
 	}
 
 	// Use type information to accurately verify the call
-	obj := ld.pass.TypesInfo.Uses[sel.Sel]
+	obj := info.Uses[sel.Sel]
 	if obj == nil {
 		return false
 	}

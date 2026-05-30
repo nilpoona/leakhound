@@ -13,10 +13,12 @@ type Finding struct {
 
 // ruleIDToSARIF maps detector rule IDs to SARIF conventional format.
 var ruleIDToSARIF = map[string]string{
-	RuleIDSensitiveVar:    "LH0001",
-	RuleIDSensitiveCall:   "LH0002",
-	RuleIDSensitiveStruct: "LH0003",
-	RuleIDSensitiveField:  "LH0004",
+	RuleIDSensitiveVar:            "LH0001",
+	RuleIDSensitiveCall:           "LH0002",
+	RuleIDSensitiveStruct:         "LH0003",
+	RuleIDSensitiveField:          "LH0004",
+	RuleIDCrossPkgSensitiveReturn: "LH0005",
+	RuleIDCrossPkgSensitiveSink:   "LH0006",
 }
 
 // ToSARIFRuleID converts a detector rule ID to SARIF format (e.g. "sensitive-var" → "LH0001").

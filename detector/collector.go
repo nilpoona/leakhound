@@ -6,6 +6,7 @@ import (
 
 	"github.com/nilpoona/leakhound/config"
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/packages"
 )
 
 // DataFlowCollector orchestrates data flow information collection in a single AST pass
@@ -14,6 +15,12 @@ import (
 // - Phase 2: Analysis (processes collected data)
 type DataFlowCollector struct {
 	pass *analysis.Pass
+
+	// Optional whole-program context. When non-nil, the collector writes
+	// shared facts (funcPkg, logCalls) into the world and tags each func
+	// declaration with its owning package.
+	world *WorldView
+	pkg   *packages.Package
 
 	// Component delegates
 	fieldCollector *FieldCollector
@@ -42,16 +49,63 @@ func NewDataFlowCollector(pass *analysis.Pass, cfg *config.Config) *DataFlowColl
 	}
 }
 
+// NewDataFlowCollectorForWorld creates a collector whose facts are shared with
+// a WorldView. Per-package collection writes into the world's accumulators so
+// the whole-program analyzer can iterate across packages afterwards.
+func NewDataFlowCollectorForWorld(pass *analysis.Pass, cfg *config.Config, world *WorldView, pkg *packages.Package) *DataFlowCollector {
+	fieldCollector := NewFieldCollectorWithFields(pass, world.sensitiveFields)
+	varTracker := NewVarTrackerForWorld(pass, world)
+	logDetector := NewLogDetectorWithConfig(pass, cfg)
+	detector := NewDetector(pass, world.sensitiveFields, varTracker)
+
+	return &DataFlowCollector{
+		pass:           pass,
+		world:          world,
+		pkg:            pkg,
+		fieldCollector: fieldCollector,
+		varTracker:     varTracker,
+		logDetector:    logDetector,
+		detector:       detector,
+		logCalls:       make([]*ast.CallExpr, 0),
+	}
+}
+
+// LogCalls returns the call expressions collected by IsLogCall during
+// traversal. Whole-program mode aggregates these for the detection phase.
+func (c *DataFlowCollector) LogCalls() []*ast.CallExpr { return c.logCalls }
+
+// Pass returns the analyzer pass associated with this collector.
+func (c *DataFlowCollector) Pass() *analysis.Pass { return c.pass }
+
+// LogDetector returns the underlying log detector (used by whole-program
+// collector when classifying call expressions cross-package).
+func (c *DataFlowCollector) LogDetector() *LogDetector { return c.logDetector }
+
+// VarTracker returns the underlying var tracker.
+func (c *DataFlowCollector) VarTracker() *VarTracker { return c.varTracker }
+
+// Detector returns the underlying detector.
+func (c *DataFlowCollector) Detector() *Detector { return c.detector }
+
 // Collect performs single-pass AST traversal to collect all information
 // This implements Phase 1 of the Two-Phase Analysis Pattern
 func (c *DataFlowCollector) Collect() {
-	// Phase 1a: Single AST traversal to collect all information
+	c.CollectFacts()
+	// Phase 1b: Multi-pass data flow analysis. In whole-program mode this
+	// step is run once by WholeProgramCollector AFTER every package has
+	// contributed its facts, so we skip it here.
+	if c.world == nil {
+		c.varTracker.AnalyzeDataFlow()
+	}
+}
+
+// CollectFacts runs only Phase 1a (single AST traversal) without per-package
+// data flow analysis. WholeProgramCollector uses this to defer propagation
+// until cross-package facts are available.
+func (c *DataFlowCollector) CollectFacts() {
 	for _, file := range c.pass.Files {
 		c.collectFromFile(file)
 	}
-
-	// Phase 1b: Multi-pass data flow analysis
-	c.varTracker.AnalyzeDataFlow()
 }
 
 // collectFromFile collects information from a single file
@@ -69,6 +123,14 @@ func (c *DataFlowCollector) collectFromFile(file *ast.File) {
 		case *ast.FuncDecl:
 			// Register function definition for data flow analysis
 			c.varTracker.CollectFunctionDef(node)
+			// In whole-program mode, also register the owning package so
+			// later phases can resolve cross-package callees back to their
+			// AST bodies.
+			if c.world != nil && node.Name != nil {
+				if obj := c.pass.TypesInfo.Defs[node.Name]; obj != nil {
+					c.world.RegisterFunc(obj, node, c.pkg)
+				}
+			}
 			c.collectFromFunction(node)
 			return false // Don't traverse into function body again
 		}

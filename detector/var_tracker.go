@@ -19,14 +19,39 @@ type VarTracker struct {
 	sensitiveFuncPos map[sensitiveReturnKey]SensitiveSource
 }
 
-// NewVarTracker creates a new VarTracker
+// NewVarTracker creates a new VarTracker with private per-package state.
 func NewVarTracker(pass *analysis.Pass, sensitiveFields map[sensitiveField]bool) *VarTracker {
-	// Create shared maps
-	sensitiveVars := make(map[*types.Var]SensitiveSource)
-	sensitiveFuncs := make(map[types.Object]SensitiveSource)
-	sensitiveFuncPos := make(map[sensitiveReturnKey]SensitiveSource)
-	sensitiveParams := make(map[*types.Var]SensitiveSource)
-	funcDefs := make(map[types.Object]*ast.FuncDecl)
+	return newVarTracker(pass, sensitiveFields, nil)
+}
+
+// NewVarTrackerForWorld creates a VarTracker whose tracking maps are shared
+// with the given WorldView. Used by whole-program mode so cross-package data
+// flow shares a single accumulator.
+func NewVarTrackerForWorld(pass *analysis.Pass, world *WorldView) *VarTracker {
+	return newVarTracker(pass, world.sensitiveFields, world)
+}
+
+func newVarTracker(pass *analysis.Pass, sensitiveFields map[sensitiveField]bool, world *WorldView) *VarTracker {
+	var (
+		sensitiveVars    map[*types.Var]SensitiveSource
+		sensitiveFuncs   map[types.Object]SensitiveSource
+		sensitiveFuncPos map[sensitiveReturnKey]SensitiveSource
+		sensitiveParams  map[*types.Var]SensitiveSource
+		funcDefs         map[types.Object]*ast.FuncDecl
+	)
+	if world != nil {
+		sensitiveVars = world.sensitiveVars
+		sensitiveFuncs = world.sensitiveFuncs
+		sensitiveFuncPos = world.sensitiveFuncPos
+		sensitiveParams = world.sensitiveParams
+		funcDefs = world.funcDefs
+	} else {
+		sensitiveVars = make(map[*types.Var]SensitiveSource)
+		sensitiveFuncs = make(map[types.Object]SensitiveSource)
+		sensitiveFuncPos = make(map[sensitiveReturnKey]SensitiveSource)
+		sensitiveParams = make(map[*types.Var]SensitiveSource)
+		funcDefs = make(map[types.Object]*ast.FuncDecl)
+	}
 
 	checker := &SensitivityChecker{
 		pass:            pass,

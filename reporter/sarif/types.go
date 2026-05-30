@@ -119,10 +119,12 @@ type Snippet struct {
 
 // Rule ID constants for SARIF output
 const (
-	RuleIDSensitiveVar    = "LH0001"
-	RuleIDSensitiveCall   = "LH0002"
-	RuleIDSensitiveStruct = "LH0003"
-	RuleIDSensitiveField  = "LH0004"
+	RuleIDSensitiveVar            = "LH0001"
+	RuleIDSensitiveCall           = "LH0002"
+	RuleIDSensitiveStruct         = "LH0003"
+	RuleIDSensitiveField          = "LH0004"
+	RuleIDCrossPkgSensitiveReturn = "LH0005"
+	RuleIDCrossPkgSensitiveSink   = "LH0006"
 )
 
 // BuildRules returns all rule descriptors for SARIF output
@@ -192,6 +194,40 @@ func BuildRules() []ReportingDescriptor {
 				Text: "Avoid logging fields marked as sensitive. Remove the field from the log call or redact its value.",
 			},
 			HelpURI: "https://github.com/nilpoona/leakhound#" + RuleIDSensitiveField,
+			DefaultConfiguration: Configuration{
+				Level: "error",
+			},
+		},
+		{
+			ID:   RuleIDCrossPkgSensitiveReturn,
+			Name: "CrossPackageSensitiveReturnLogged",
+			ShortDescription: MessageString{
+				Text: "Cross-package function returning sensitive data is logged",
+			},
+			FullDescription: MessageString{
+				Text: "A function defined in a different package returns data derived from a field tagged with sensitive:\"true\", and the result is passed to a logging function.",
+			},
+			Help: MessageString{
+				Text: "Avoid logging the return value of cross-package functions that surface sensitive data. Redact or transform the value before logging.",
+			},
+			HelpURI: "https://github.com/nilpoona/leakhound#" + RuleIDCrossPkgSensitiveReturn,
+			DefaultConfiguration: Configuration{
+				Level: "error",
+			},
+		},
+		{
+			ID:   RuleIDCrossPkgSensitiveSink,
+			Name: "CrossPackageSensitiveSink",
+			ShortDescription: MessageString{
+				Text: "Sensitive data flows into a logging sink in another package",
+			},
+			FullDescription: MessageString{
+				Text: "Sensitive data (from a field tagged with sensitive:\"true\") is passed as an argument to a function in a different package whose body forwards that parameter to a logging function.",
+			},
+			Help: MessageString{
+				Text: "Avoid passing sensitive values to cross-package functions that log their parameters. Redact upstream or switch to a non-logging API.",
+			},
+			HelpURI: "https://github.com/nilpoona/leakhound#" + RuleIDCrossPkgSensitiveSink,
 			DefaultConfiguration: Configuration{
 				Level: "error",
 			},

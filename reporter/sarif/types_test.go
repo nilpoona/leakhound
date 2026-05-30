@@ -13,8 +13,8 @@ func TestBuildRules(t *testing.T) {
 	rules := BuildRules()
 
 	// Test basic properties
-	if len(rules) != 4 {
-		t.Fatalf("BuildRules() returned %d rules, want 4", len(rules))
+	if len(rules) != 6 {
+		t.Fatalf("BuildRules() returned %d rules, want 6", len(rules))
 	}
 
 	// Expected rule definitions
@@ -87,6 +87,40 @@ func TestBuildRules(t *testing.T) {
 				Level: "error",
 			},
 		},
+		{
+			ID:   "LH0005",
+			Name: "CrossPackageSensitiveReturnLogged",
+			ShortDescription: MessageString{
+				Text: "Cross-package function returning sensitive data is logged",
+			},
+			FullDescription: MessageString{
+				Text: "A function defined in a different package returns data derived from a field tagged with sensitive:\"true\", and the result is passed to a logging function.",
+			},
+			Help: MessageString{
+				Text: "Avoid logging the return value of cross-package functions that surface sensitive data. Redact or transform the value before logging.",
+			},
+			HelpURI: "https://github.com/nilpoona/leakhound#LH0005",
+			DefaultConfiguration: Configuration{
+				Level: "error",
+			},
+		},
+		{
+			ID:   "LH0006",
+			Name: "CrossPackageSensitiveSink",
+			ShortDescription: MessageString{
+				Text: "Sensitive data flows into a logging sink in another package",
+			},
+			FullDescription: MessageString{
+				Text: "Sensitive data (from a field tagged with sensitive:\"true\") is passed as an argument to a function in a different package whose body forwards that parameter to a logging function.",
+			},
+			Help: MessageString{
+				Text: "Avoid passing sensitive values to cross-package functions that log their parameters. Redact upstream or switch to a non-logging API.",
+			},
+			HelpURI: "https://github.com/nilpoona/leakhound#LH0006",
+			DefaultConfiguration: Configuration{
+				Level: "error",
+			},
+		},
 	}
 
 	if !reflect.DeepEqual(rules, expectedRules) {
@@ -114,7 +148,7 @@ func TestBuildRules_RuleIDs(t *testing.T) {
 	}
 
 	// Test that all expected rule IDs are present
-	expectedIDs := []string{"LH0001", "LH0002", "LH0003", "LH0004"}
+	expectedIDs := []string{"LH0001", "LH0002", "LH0003", "LH0004", "LH0005", "LH0006"}
 	for _, expectedID := range expectedIDs {
 		if !ruleIDs[expectedID] {
 			t.Errorf("Missing expected rule ID: %s", expectedID)
@@ -132,6 +166,8 @@ func TestBuildRules_RuleNames(t *testing.T) {
 		"LH0002": "SensitiveFunctionCallLogged",
 		"LH0003": "SensitiveStructLogged",
 		"LH0004": "SensitiveFieldLogged",
+		"LH0005": "CrossPackageSensitiveReturnLogged",
+		"LH0006": "CrossPackageSensitiveSink",
 	}
 
 	for _, rule := range rules {
