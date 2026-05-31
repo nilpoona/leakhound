@@ -15,6 +15,10 @@ func Test(t *testing.T) {
 		"crosspackage",
 		"dataflow",
 		"suppression",
+		"tagcases",
+		"flowcases",
+		"containers",
+		"transforms",
 	}
 
 	for _, pattern := range patterns {

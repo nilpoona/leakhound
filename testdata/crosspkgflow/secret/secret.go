@@ -15,6 +15,13 @@ func GetPassword(u User) string {
 	return u.Password
 }
 
+// GetPasswordAndErr returns sensitive data at position 0 of a multi-value
+// return. Cross-package callers that log position 0 must be flagged, while
+// position 1 (error) must stay clean.
+func GetPasswordAndErr(u User) (string, error) {
+	return u.Password, nil
+}
+
 // LogIt forwards its parameter to a logging function. Any caller in another
 // package that passes a sensitive value here must be flagged with LH0006 at
 // the call site.
@@ -27,4 +34,19 @@ func LogIt(payload string) {
 // the local call graph too.
 func Indirect(payload string) {
 	LogIt(payload)
+}
+
+// DeepSink exercises a THREE-level transitive sink chain
+// (DeepSink -> deepSink2 -> deepSink1 -> slog) so sink propagation must walk
+// several edges of the local call graph before reaching the logging call.
+func DeepSink(payload string) {
+	deepSink2(payload)
+}
+
+func deepSink2(payload string) {
+	deepSink1(payload)
+}
+
+func deepSink1(payload string) {
+	slog.Info("payload", "v", payload)
 }

@@ -27,6 +27,29 @@ func LeakViaIndirectSink(u secret.User) {
 	secret.Indirect(u.Password) // want "passed to cross-package function .Indirect. whose parameter"
 }
 
+// LeakViaCrossPkgMultiReturn logs position 0 of a cross-package multi-value
+// return derived from a sensitive field. The taint is tracked across the
+// package boundary and surfaces at the logged variable.
+func LeakViaCrossPkgMultiReturn(u secret.User) {
+	pw, err := secret.GetPasswordAndErr(u)
+	_ = err
+	slog.Info("msg", "pw", pw) // want "contains sensitive field"
+}
+
+// SafeCrossPkgMultiReturnErr logs only position 1 (the error) — must NOT be
+// flagged.
+func SafeCrossPkgMultiReturnErr(u secret.User) {
+	_, err := secret.GetPasswordAndErr(u)
+	slog.Info("msg", "err", err)
+}
+
+// LeakViaDeepSink passes a sensitive value into a cross-package function whose
+// parameter only reaches a logger after THREE more hops. Expected: LH0006 at
+// the argument.
+func LeakViaDeepSink(u secret.User) {
+	secret.DeepSink(u.Password) // want "passed to cross-package function .DeepSink. whose parameter"
+}
+
 // SafeCrossPkgCall passes a non-sensitive field across packages — must NOT
 // be flagged.
 func SafeCrossPkgCall(u secret.User) {
