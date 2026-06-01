@@ -81,35 +81,36 @@ func (d *Detector) CheckArgForSensitiveData(arg ast.Expr) []Finding {
 		// Check if the entire struct has sensitive fields
 		if named, ok := typ.(*types.Named); ok {
 			// Add nil check for named type object to handle build constraint issues
-			obj := named.Obj()
-			if obj == nil {
-				return findings
-			}
-			typeName := obj.Name()
+			if obj := named.Obj(); obj != nil {
+				typeName := obj.Name()
 
-			// Check local cache first
-			if hasAnySensitiveFields(typeName, d.sensitiveFields) {
-				findings = append(findings, Finding{
-					Pos: arg.Pos(),
-					Message: fmt.Sprintf(
-						"struct '%s' contains sensitive fields and should not be logged entirely",
-						typeName),
-					RuleID: RuleIDSensitiveStruct,
-				})
-				return findings
+				// Check local cache first, then fall back to type info.
+				if hasAnySensitiveFields(typeName, d.sensitiveFields) ||
+					hasAnySensitiveFieldsFromType(d.pass, named) {
+					findings = append(findings, Finding{
+						Pos: arg.Pos(),
+						Message: fmt.Sprintf(
+							"struct '%s' contains sensitive fields and should not be logged entirely",
+							typeName),
+						RuleID: RuleIDSensitiveStruct,
+					})
+					return findings
+				}
 			}
+		}
 
-			// If not found in local cache, check using type info
-			if hasAnySensitiveFieldsFromType(d.pass, named) {
-				findings = append(findings, Finding{
-					Pos: arg.Pos(),
-					Message: fmt.Sprintf(
-						"struct '%s' contains sensitive fields and should not be logged entirely",
-						typeName),
-					RuleID: RuleIDSensitiveStruct,
-				})
-				return findings
-			}
+		// Check container types (slice/array/map/chan) whose element, key, or
+		// value is a struct with sensitive fields, e.g. logging a whole
+		// []User or map[string]User.
+		if name, ok := typeContainsSensitiveStruct(d.pass, typ, make(map[string]bool)); ok {
+			findings = append(findings, Finding{
+				Pos: arg.Pos(),
+				Message: fmt.Sprintf(
+					"logged value contains type '%s' with sensitive fields and should not be logged entirely",
+					name),
+				RuleID: RuleIDSensitiveStruct,
+			})
+			return findings
 		}
 	}
 
