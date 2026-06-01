@@ -138,6 +138,46 @@ func checkStructForSensitiveFields(pass *analysis.Pass, named *types.Named, visi
 	return false
 }
 
+// typeContainsSensitiveStruct unwraps container types (pointer, slice, array,
+// map, chan) and reports whether any element/key/value type is a named struct
+// carrying sensitive fields. It returns the offending struct's type name for
+// use in diagnostics. This is what lets leakhound flag logging an entire
+// []User or map[string]User when User has sensitive fields.
+func typeContainsSensitiveStruct(pass *analysis.Pass, typ types.Type, visited map[string]bool) (string, bool) {
+	switch t := typ.(type) {
+	case *types.Pointer:
+		return typeContainsSensitiveStruct(pass, t.Elem(), visited)
+	case *types.Slice:
+		return typeContainsSensitiveStruct(pass, t.Elem(), visited)
+	case *types.Array:
+		return typeContainsSensitiveStruct(pass, t.Elem(), visited)
+	case *types.Chan:
+		return typeContainsSensitiveStruct(pass, t.Elem(), visited)
+	case *types.Map:
+		// A sensitive struct in either the key or the value position leaks.
+		if name, ok := typeContainsSensitiveStruct(pass, t.Key(), visited); ok {
+			return name, true
+		}
+		return typeContainsSensitiveStruct(pass, t.Elem(), visited)
+	case *types.Named:
+		obj := t.Obj()
+		if obj == nil {
+			return "", false
+		}
+		// A named struct: reuse the embedded-aware struct walk.
+		if _, isStruct := t.Underlying().(*types.Struct); isStruct {
+			if checkStructForSensitiveFields(pass, t, visited) {
+				return obj.Name(), true
+			}
+			return "", false
+		}
+		// A named non-struct (e.g. `type Users []User`): recurse into its
+		// underlying container type.
+		return typeContainsSensitiveStruct(pass, t.Underlying(), visited)
+	}
+	return "", false
+}
+
 // checkSensitiveFieldFromTypeInfo checks if a field has sensitive tag using type information
 // This also checks embedded structs for the field
 func checkSensitiveFieldFromTypeInfo(pass *analysis.Pass, named *types.Named, fieldName string) bool {
