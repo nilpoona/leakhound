@@ -304,7 +304,7 @@ logValue(password)  // Tracks sensitive data through function call
 
 ### Nested Function Calls
 ```go
-// ✅ Nested function call tracking 
+// ✅ Nested function call tracking
 func inner(data string) {
     log.Println(data)  // Detected!
 }
@@ -315,6 +315,25 @@ func outer(val string) {
 
 password := user.Password
 outer(password)  // Tracks up to 5 levels deep
+```
+
+### Variadic Arguments
+```go
+// ✅ Direct variadic parameter logging
+func logDirect(vals ...interface{}) {
+    slog.Info("data", vals)  // Detected!
+}
+
+// ✅ Range iteration over variadic parameters
+func logMultiple(vals ...string) {
+    for _, v := range vals {
+        slog.Info("msg", v)  // Detected! Range variable tracking supported
+    }
+}
+
+password := user.Password
+logDirect("msg", password, "other")  // Tracks sensitive data in variadic args
+logMultiple("safe", password)         // Tracks through range iteration
 ```
 
 ### Cross-Package Tracking (whole-program mode)
@@ -361,15 +380,6 @@ Due to the nature of static analysis, there are the following limitations:
 
 ### Cases that cannot be detected
 ```go
-// ❌ Variadic arguments (out of scope)
-func logMultiple(vals ...string) {
-    for _, v := range vals {
-        slog.Info("msg", v)
-    }
-}
-password := user.Password
-logMultiple("safe", password)  // Not tracked
-
 // ❌ Reassignments (flow-sensitive analysis not implemented)
 password := user.Password  // Sensitive
 password = "safe-value"    // Overwritten

@@ -149,6 +149,7 @@ func (c *DataFlowCollector) collectFromFunction(funcDecl *ast.FuncDecl) {
 	}
 
 	// Traverse function body to collect assignments, returns, and log calls
+	// Note: Range statements are analyzed later in DataFlowAnalyzer after sensitivity propagation
 	if funcDecl.Body != nil {
 		ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
 			switch node := n.(type) {

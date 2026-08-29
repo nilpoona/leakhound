@@ -24,7 +24,7 @@ type DataFlowAnalyzer struct {
 // visitedFuncs is created and managed locally for each analysis pass.
 func (da *DataFlowAnalyzer) Analyze() {
 	// Track function calls to propagate sensitive parameters
-	// Use multiple passes to handle nested function calls
+	// Use multiple passes to handle nested function calls and range variables
 	maxPasses := 5 // Limit iterations to prevent infinite loops
 	changed := true
 
@@ -35,6 +35,8 @@ func (da *DataFlowAnalyzer) Analyze() {
 		for funcObj, funcDecl := range da.funcDefs {
 			beforeCount := len(da.sensitiveVars)
 			da.analyzeFunctionCalls(funcObj, funcDecl, visitedFuncs)
+			// Also propagate sensitivity through range statements
+			da.analyzeRangeStatements(funcDecl)
 			if len(da.sensitiveVars) > beforeCount {
 				changed = true
 			}
@@ -79,19 +81,33 @@ func (da *DataFlowAnalyzer) analyzeFunctionCalls(funcObj types.Object, funcDecl 
 		}
 
 		// Map arguments to parameters
-		// Build a flat list of parameter names
+		// Build a flat list of parameter names and check for variadic
 		var paramNames []*ast.Ident
-		for _, field := range calledFuncDecl.Type.Params.List {
+		var isVariadic bool
+		for i, field := range calledFuncDecl.Type.Params.List {
 			paramNames = append(paramNames, field.Names...)
+			// Check if this is the last parameter and is variadic
+			if i == len(calledFuncDecl.Type.Params.List)-1 {
+				if _, ok := field.Type.(*ast.Ellipsis); ok {
+					isVariadic = true
+				}
+			}
 		}
 
 		// Map each argument to its corresponding parameter
 		for argIdx, arg := range call.Args {
-			if argIdx >= len(paramNames) {
+			var paramName *ast.Ident
+
+			// Regular parameter mapping
+			if argIdx < len(paramNames) {
+				paramName = paramNames[argIdx]
+			} else if isVariadic && len(paramNames) > 0 {
+				// Variadic parameter: all excess arguments map to the last parameter
+				paramName = paramNames[len(paramNames)-1]
+			} else {
+				// No more parameters to map
 				break
 			}
-
-			paramName := paramNames[argIdx]
 
 			// Check if this argument is sensitive
 			if source := da.checker.checkSensitiveExpr(arg, da.sensitiveVars, da.sensitiveFuncs); source != nil {
@@ -106,6 +122,76 @@ func (da *DataFlowAnalyzer) analyzeFunctionCalls(funcObj types.Object, funcDecl 
 						}
 						da.sensitiveParams[v] = newSource
 						da.sensitiveVars[v] = newSource
+					}
+				}
+			}
+		}
+
+		return true
+	})
+}
+
+// analyzeRangeStatements propagates sensitivity through range statements
+// This handles cases where a sensitive slice/array/map is ranged over
+func (da *DataFlowAnalyzer) analyzeRangeStatements(funcDecl *ast.FuncDecl) {
+	if funcDecl.Body == nil {
+		return
+	}
+
+	ast.Inspect(funcDecl.Body, func(n ast.Node) bool {
+		rangeStmt, ok := n.(*ast.RangeStmt)
+		if !ok {
+			return true
+		}
+
+		// Check if the ranged-over expression is sensitive
+		if rangeStmt.X == nil {
+			return true
+		}
+
+		// Use a temporary SensitivityChecker to evaluate the expression
+		checker := &SensitivityChecker{
+			pass:            da.pass,
+			sensitiveFields: make(map[sensitiveField]bool), // Not needed for var checking
+		}
+
+		source := checker.checkSensitiveExpr(rangeStmt.X, da.sensitiveVars, nil)
+		if source == nil {
+			return true
+		}
+
+		// Mark the Value variable (element) as sensitive
+		if rangeStmt.Value != nil {
+			if ident, ok := rangeStmt.Value.(*ast.Ident); ok {
+				if obj := da.pass.TypesInfo.Defs[ident]; obj != nil {
+					if v, ok := obj.(*types.Var); ok {
+						// Only add if not already tracked (avoid overwriting)
+						if _, exists := da.sensitiveVars[v]; !exists {
+							newSource := SensitiveSource{
+								FieldName: source.FieldName,
+								Position:  rangeStmt.Value.Pos(),
+								FlowPath:  append(append([]string{}, source.FlowPath...), "range variable '"+ident.Name+"'"),
+							}
+							da.sensitiveVars[v] = newSource
+						}
+					}
+				}
+			}
+		}
+
+		// Mark the Key variable as sensitive if present
+		if rangeStmt.Key != nil {
+			if ident, ok := rangeStmt.Key.(*ast.Ident); ok {
+				if obj := da.pass.TypesInfo.Defs[ident]; obj != nil {
+					if v, ok := obj.(*types.Var); ok {
+						if _, exists := da.sensitiveVars[v]; !exists {
+							newSource := SensitiveSource{
+								FieldName: source.FieldName,
+								Position:  rangeStmt.Key.Pos(),
+								FlowPath:  append(append([]string{}, source.FlowPath...), "range key '"+ident.Name+"'"),
+							}
+							da.sensitiveVars[v] = newSource
+						}
 					}
 				}
 			}

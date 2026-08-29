@@ -298,35 +298,47 @@ func (wp *WholeProgramCollector) propagateThroughFunc(callerObj types.Object, ca
 		}
 		calleeDecl, hasDecl := wp.world.funcDefs[calleeObj]
 		var calleeParams []*types.Var
+		var calleeIsVariadic bool
 		if hasDecl {
 			if calleePkg := wp.world.PackageOf(calleeObj); calleePkg != nil {
 				calleeParams = paramObjects(calleeDecl, calleePkg.TypesInfo)
+				calleeIsVariadic = isVariadicFunc(calleeDecl)
 			}
 		}
 
 		for argIdx, arg := range call.Args {
+			// Determine which parameter this argument corresponds to
+			var paramVar *types.Var
+			if argIdx < len(calleeParams) {
+				paramVar = calleeParams[argIdx]
+			} else if calleeIsVariadic && len(calleeParams) > 0 {
+				// Variadic parameter: all excess arguments map to the last parameter
+				paramVar = calleeParams[len(calleeParams)-1]
+			}
+
+			if paramVar == nil {
+				continue
+			}
+
 			// Forward propagation: arg(sensitive) → callee.param(sensitive)
-			if argIdx < len(calleeParams) && calleeParams[argIdx] != nil {
-				paramVar := calleeParams[argIdx]
-				if _, already := wp.world.sensitiveParams[paramVar]; !already {
-					if src := wp.evalSensitive(arg, callerInfo); src != nil {
-						newSource := SensitiveSource{
-							FieldName: src.FieldName,
-							Position:  arg.Pos(),
-							FlowPath:  append(append([]string{}, src.FlowPath...), fmt.Sprintf("parameter '%s'", paramVar.Name())),
-						}
-						wp.world.sensitiveParams[paramVar] = newSource
-						wp.world.sensitiveVars[paramVar] = newSource
-						// The callee now carries sensitivity inward; let it
-						// propagate from its own body.
-						toEnqueue = append(toEnqueue, calleeObj)
+			if _, already := wp.world.sensitiveParams[paramVar]; !already {
+				if src := wp.evalSensitive(arg, callerInfo); src != nil {
+					newSource := SensitiveSource{
+						FieldName: src.FieldName,
+						Position:  arg.Pos(),
+						FlowPath:  append(append([]string{}, src.FlowPath...), fmt.Sprintf("parameter '%s'", paramVar.Name())),
 					}
+					wp.world.sensitiveParams[paramVar] = newSource
+					wp.world.sensitiveVars[paramVar] = newSource
+					// The callee now carries sensitivity inward; let it
+					// propagate from its own body.
+					toEnqueue = append(toEnqueue, calleeObj)
 				}
 			}
 
 			// Sink back-propagation: arg refers to caller's param AND callee's
 			// param at this index is a sink → caller's param is a sink.
-			if argIdx < len(calleeParams) && calleeParams[argIdx] != nil && wp.world.sinkParams[calleeParams[argIdx]] {
+			if wp.world.sinkParams[paramVar] {
 				if p := identifiedParam(arg, callerInfo, callerParams); p != nil {
 					markCallerSink(p)
 				}
@@ -434,13 +446,23 @@ func (wp *WholeProgramCollector) detectSinkAtCallSite(callerPkg *packages.Packag
 		return nil
 	}
 	calleeParams := paramObjects(calleeDecl, calleePkg.TypesInfo)
+	calleeIsVariadic := isVariadicFunc(calleeDecl)
 
 	var findings []Finding
 	for argIdx, arg := range call.Args {
-		if argIdx >= len(calleeParams) || calleeParams[argIdx] == nil {
+		// Determine which parameter this argument corresponds to
+		var paramVar *types.Var
+		if argIdx < len(calleeParams) {
+			paramVar = calleeParams[argIdx]
+		} else if calleeIsVariadic && len(calleeParams) > 0 {
+			// Variadic parameter: all excess arguments map to the last parameter
+			paramVar = calleeParams[len(calleeParams)-1]
+		}
+
+		if paramVar == nil {
 			continue
 		}
-		if !wp.world.sinkParams[calleeParams[argIdx]] {
+		if !wp.world.sinkParams[paramVar] {
 			continue
 		}
 		src := wp.evalSensitive(arg, callerPkg.TypesInfo)
@@ -451,7 +473,7 @@ func (wp *WholeProgramCollector) detectSinkAtCallSite(callerPkg *packages.Packag
 			Pos: arg.Pos(),
 			Message: fmt.Sprintf(
 				"sensitive field %q is passed to cross-package function %q whose parameter %q is logged downstream",
-				src.FieldName, calleeObj.Name(), calleeParams[argIdx].Name()),
+				src.FieldName, calleeObj.Name(), paramVar.Name()),
 			RuleID: RuleIDCrossPkgSensitiveSink,
 		})
 	}
@@ -590,6 +612,20 @@ func enclosingFuncForCall(pkg *packages.Package, target *ast.CallExpr) types.Obj
 		}
 	}
 	return nil
+}
+
+// isVariadicFunc returns true if the function declaration has a variadic parameter.
+func isVariadicFunc(decl *ast.FuncDecl) bool {
+	if decl == nil || decl.Type == nil || decl.Type.Params == nil {
+		return false
+	}
+	fields := decl.Type.Params.List
+	if len(fields) == 0 {
+		return false
+	}
+	lastField := fields[len(fields)-1]
+	_, ok := lastField.Type.(*ast.Ellipsis)
+	return ok
 }
 
 // paramObjects returns the flat list of *types.Var corresponding to each
