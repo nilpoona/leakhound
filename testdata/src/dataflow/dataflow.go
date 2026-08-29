@@ -425,15 +425,25 @@ func testFunctionFromOtherPackage() {
 
 func logMultiple(vals ...string) {
 	for _, v := range vals {
-		slog.Info("msg", v)
+		slog.Info("msg", v) // want "variable \"v\" contains sensitive field \"User.Password\""
 	}
 }
 
+// Direct variadic logging function
+func logVariadicDirect(msg string, vals ...interface{}) {
+	slog.Info(msg, "data", vals) // want "variable \"vals\" contains sensitive field \"User.Password\""
+}
+
 func testVariadicArguments() {
-	// TC-106: Variadic arguments (out of scope)
+	// TC-106: Variadic arguments with range iteration (now fully supported!)
 	user := User{Name: "sam", Password: "secretABC9"}
 	password := user.Password
-	logMultiple("safe", password) // Should NOT be detected (variadic out of scope)
+
+	// Direct variadic logging
+	logVariadicDirect("user data", password, "other")
+
+	// Range iteration over variadic parameters
+	logMultiple("safe", password) // Range variable 'v' inside logMultiple will be detected
 }
 
 func logValueSafe(val string) {

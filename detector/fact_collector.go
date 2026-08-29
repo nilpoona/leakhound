@@ -123,3 +123,55 @@ func (fc *FactCollector) CollectReturn(ret *ast.ReturnStmt) {
 		}
 	}
 }
+
+// CollectRangeStmt analyzes a range statement for sensitive data propagation
+// If the ranged-over expression is sensitive, the range variables inherit sensitivity
+func (fc *FactCollector) CollectRangeStmt(rangeStmt *ast.RangeStmt) {
+	// Check if the ranged-over expression (X) is sensitive
+	if rangeStmt.X == nil {
+		return
+	}
+
+	source := fc.checker.checkSensitiveExpr(rangeStmt.X, fc.sensitiveVars, fc.sensitiveFuncs)
+	if source == nil {
+		return
+	}
+
+	// Mark the Value variable (element) as sensitive
+	// For: for _, v := range vals { ... }
+	//      Value is v, Key is _ (blank identifier)
+	if rangeStmt.Value != nil {
+		if ident, ok := rangeStmt.Value.(*ast.Ident); ok {
+			if obj := fc.checker.pass.TypesInfo.Defs[ident]; obj != nil {
+				if v, ok := obj.(*types.Var); ok {
+					// Create new source with updated flow path
+					newSource := SensitiveSource{
+						FieldName: source.FieldName,
+						Position:  rangeStmt.Value.Pos(),
+						FlowPath:  append(append([]string{}, source.FlowPath...), "range variable '"+ident.Name+"'"),
+					}
+					fc.sensitiveVars[v] = newSource
+				}
+			}
+		}
+	}
+
+	// Also mark the Key variable (index) as sensitive if present
+	// This handles cases like: for i, v := range vals { ... }
+	if rangeStmt.Key != nil {
+		if ident, ok := rangeStmt.Key.(*ast.Ident); ok {
+			if obj := fc.checker.pass.TypesInfo.Defs[ident]; obj != nil {
+				if v, ok := obj.(*types.Var); ok {
+					// For map ranges, the key might be sensitive
+					// For slice/array ranges, the key is just an index (int), but we track it anyway for consistency
+					newSource := SensitiveSource{
+						FieldName: source.FieldName,
+						Position:  rangeStmt.Key.Pos(),
+						FlowPath:  append(append([]string{}, source.FlowPath...), "range key '"+ident.Name+"'"),
+					}
+					fc.sensitiveVars[v] = newSource
+				}
+			}
+		}
+	}
+}
