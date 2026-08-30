@@ -14,12 +14,26 @@ func (sa *SSAAnalyzer) Analyze() {
 	// Phase 1: Collect sensitive fields from struct definitions
 	sa.collectSensitiveFields()
 
-	// Phase 2: Analyze all functions in the program
-	for _, pkg := range sa.prog.AllPackages() {
-		for _, member := range pkg.Members {
-			if fn, ok := member.(*ssa.Function); ok {
-				sa.analyzeFunction(fn)
+	// Phase 2: Iterative data flow analysis
+	// Repeat analysis until no new sensitive values are discovered
+	const maxIterations = 5
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		prevCount := len(sa.sensitiveValues)
+
+		// Analyze all functions in the program
+		for _, pkg := range sa.prog.AllPackages() {
+			for _, member := range pkg.Members {
+				if fn, ok := member.(*ssa.Function); ok {
+					sa.analyzeFunction(fn)
+				}
 			}
+		}
+
+		// Check if we discovered new sensitive values
+		newCount := len(sa.sensitiveValues)
+		if newCount == prevCount {
+			// Converged - no new sensitive values discovered
+			break
 		}
 	}
 
@@ -235,20 +249,45 @@ func (sa *SSAAnalyzer) analyzeStore(instr *ssa.Store) {
 
 // analyzeCall handles function calls.
 // This checks if the call is to a logging function and if any arguments are sensitive.
+// For non-logging calls, it propagates sensitivity from arguments to parameters.
 func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 	// Check if this is a logging function call
-	if !sa.isLogCall(instr) {
-		// TODO: Implement parameter-to-argument propagation in next phase
+	if sa.isLogCall(instr) {
+		// This is a logging call - check all arguments for sensitive data
+		for _, arg := range instr.Call.Args {
+			if source := sa.GetSource(arg); source != nil {
+				// Found sensitive data being logged!
+				message := "sensitive field \"" + source.TypeName + "." + source.FieldName +
+					"\" is logged and should not be logged"
+				sa.addFinding(instr.Pos(), message, "sensitive-field", source)
+			}
+		}
 		return
 	}
 
-	// This is a logging call - check all arguments for sensitive data
-	for _, arg := range instr.Call.Args {
+	// Not a logging call - propagate sensitivity from arguments to parameters
+	callee := instr.Call.StaticCallee()
+	if callee == nil {
+		// Dynamic call (interface method, function pointer, etc.)
+		// TODO: Handle dynamic calls in a later phase
+		return
+	}
+
+	// Only propagate for same-package functions (we have their SSA bodies)
+	if callee.Pkg == nil || callee.Pkg != sa.prog.Package(callee.Pkg.Pkg) {
+		// External package or builtin - skip for now
+		return
+	}
+
+	// Propagate sensitivity from arguments to parameters
+	for i, arg := range instr.Call.Args {
 		if source := sa.GetSource(arg); source != nil {
-			// Found sensitive data being logged!
-			message := "sensitive field \"" + source.TypeName + "." + source.FieldName +
-				"\" is logged and should not be logged"
-			sa.addFinding(instr.Pos(), message, "sensitive-field", source)
+			// This argument is sensitive
+			// Mark the corresponding parameter as sensitive
+			if i < len(callee.Params) {
+				param := callee.Params[i]
+				sa.MarkSensitive(param, source)
+			}
 		}
 	}
 }
