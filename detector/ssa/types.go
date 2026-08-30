@@ -6,6 +6,13 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
+// Rule ID constants for SSA-based findings
+const (
+	RuleIDSensitiveField          = "sensitive-field"
+	RuleIDCrossPkgSensitiveReturn = "cross-pkg-sensitive-return"
+	RuleIDCrossPkgSensitiveSink   = "cross-pkg-sensitive-sink"
+)
+
 // SensitiveSource represents the origin of sensitive data in SSA form.
 // This is identical to detector.SensitiveSource but works with ssa.Value.
 type SensitiveSource struct {
@@ -38,6 +45,11 @@ type SSAAnalyzer struct {
 	// sensitiveFuncs tracks functions that return sensitive data
 	sensitiveFuncs map[*ssa.Function]bool
 
+	// sinkParams tracks parameters that are logged (directly or transitively)
+	// Key: *ssa.Parameter
+	// Value: true if the parameter flows into a logging call
+	sinkParams map[*ssa.Parameter]bool
+
 	// findings collects all detected sensitive data leaks
 	findings []*Finding
 
@@ -58,6 +70,7 @@ func NewSSAAnalyzer(prog *ssa.Program, fset *token.FileSet) *SSAAnalyzer {
 		sensitiveValues: make(map[ssa.Value]*SensitiveSource),
 		sensitiveFields: make(map[sensitiveField]bool),
 		sensitiveFuncs:  make(map[*ssa.Function]bool),
+		sinkParams:      make(map[*ssa.Parameter]bool),
 		findings:        make([]*Finding, 0),
 		fset:            fset,
 	}
@@ -148,6 +161,67 @@ func (sa *SSAAnalyzer) DebugLogCallsCount() int {
 		}
 	}
 	return count
+}
+
+// DebugSinkParamsCount returns the number of sink parameters identified.
+// This is for testing/debugging purposes only.
+func (sa *SSAAnalyzer) DebugSinkParamsCount() int {
+	return len(sa.sinkParams)
+}
+
+// DebugPrintSinkParams prints all sink parameters for debugging.
+// This is for testing/debugging purposes only.
+func (sa *SSAAnalyzer) DebugPrintSinkParams() map[string]string {
+	result := make(map[string]string)
+	for param := range sa.sinkParams {
+		fn := param.Parent()
+		pkgPath := ""
+		if fn.Pkg != nil && fn.Pkg.Pkg != nil {
+			pkgPath = fn.Pkg.Pkg.Path()
+		}
+		key := pkgPath + "." + fn.Name() + ":" + param.Name()
+		result[key] = param.String()
+	}
+	return result
+}
+
+// DebugPrintLogCalls prints all detected log calls for debugging.
+// This is for testing/debugging purposes only.
+func (sa *SSAAnalyzer) DebugPrintLogCalls() []string {
+	var calls []string
+	for _, pkg := range sa.prog.AllPackages() {
+		for _, member := range pkg.Members {
+			fn, ok := member.(*ssa.Function)
+			if !ok || fn.Blocks == nil {
+				continue
+			}
+			for _, block := range fn.Blocks {
+				for _, instr := range block.Instrs {
+					call, ok := instr.(*ssa.Call)
+					if !ok {
+						continue
+					}
+					if sa.isLogCall(call) {
+						callee := call.Call.StaticCallee()
+						callerPkg := ""
+						if fn.Pkg != nil && fn.Pkg.Pkg != nil {
+							callerPkg = fn.Pkg.Pkg.Path()
+						}
+						calleePkg := ""
+						if callee != nil && callee.Pkg != nil && callee.Pkg.Pkg != nil {
+							calleePkg = callee.Pkg.Pkg.Path()
+						}
+						calleeName := ""
+						if callee != nil {
+							calleeName = callee.Name()
+						}
+						calls = append(calls, callerPkg+"."+fn.Name()+" calls "+calleePkg+"."+calleeName)
+					}
+				}
+			}
+		}
+	}
+	return calls
 }
 
 // isLogCall checks if an SSA call is to a logging function (exposed for debugging).
