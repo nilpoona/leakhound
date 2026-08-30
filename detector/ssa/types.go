@@ -98,7 +98,16 @@ func (sa *SSAAnalyzer) GetFindings() []*Finding {
 }
 
 // addFinding adds a new finding to the results.
+// Duplicate findings (same position and rule ID) are not added.
 func (sa *SSAAnalyzer) addFinding(pos token.Pos, message, ruleID string, source *SensitiveSource) {
+	// Check for duplicate
+	for _, existing := range sa.findings {
+		if existing.Pos == pos && existing.RuleID == ruleID {
+			// Already reported this finding
+			return
+		}
+	}
+
 	sa.findings = append(sa.findings, &Finding{
 		Pos:     pos,
 		Message: message,

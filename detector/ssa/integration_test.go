@@ -134,3 +134,172 @@ func main() {
 
 	t.Log("✅ Successfully detected sensitive field in slog.Info call!")
 }
+
+// TestVariableAssignment tests detection of sensitive data through local variable assignment.
+// This validates that SSA tracks sensitivity through variable assignments.
+func TestVariableAssignment(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write go.mod
+	goMod := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(goMod, []byte("module testpkg\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("Failed to write go.mod: %v", err)
+	}
+
+	// Write test case: variable assignment
+	testFile := filepath.Join(tmpDir, "main.go")
+	code := `package main
+
+import "log/slog"
+
+type User struct {
+	Name     string
+	Password string ` + "`sensitive:\"true\"`" + `
+}
+
+func main() {
+	user := User{Name: "alice", Password: "secret123"}
+	password := user.Password  // Variable assignment
+	slog.Info("user data", "pass", password)  // Should detect
+}
+`
+	if err := os.WriteFile(testFile, []byte(code), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Load and analyze
+	cfg := &packages.Config{
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedCompiledGoFiles |
+			packages.NeedImports |
+			packages.NeedTypes |
+			packages.NeedTypesSizes |
+			packages.NeedSyntax |
+			packages.NeedTypesInfo,
+		Dir: tmpDir,
+	}
+
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		t.Fatalf("Failed to load package: %v", err)
+	}
+
+	if len(pkgs) == 0 || len(pkgs[0].Errors) > 0 {
+		t.Fatalf("Package load failed")
+	}
+
+	prog, ssaPkgs := ssautil.AllPackages(pkgs, 0)
+	prog.Build()
+
+	if len(ssaPkgs) == 0 {
+		t.Fatal("No SSA packages built")
+	}
+
+	analyzer := leakhoundssa.NewSSAAnalyzer(prog, pkgs[0].Fset)
+	analyzer.Analyze()
+
+	findings := analyzer.GetFindings()
+
+	if len(findings) != 1 {
+		t.Errorf("Expected 1 finding, got %d", len(findings))
+		for i, f := range findings {
+			t.Logf("Finding %d: %s (rule: %s)", i, f.Message, f.RuleID)
+		}
+		return
+	}
+
+	finding := findings[0]
+	if finding.RuleID != "sensitive-field" {
+		t.Errorf("Expected rule ID 'sensitive-field', got %q", finding.RuleID)
+	}
+
+	t.Log("✅ Successfully detected sensitive data through variable assignment!")
+}
+
+// TestFunctionCallPropagation tests detection of sensitive data propagated through function calls.
+// This validates that SSA tracks sensitivity through parameter-to-argument flow.
+func TestFunctionCallPropagation(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write go.mod
+	goMod := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(goMod, []byte("module testpkg\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("Failed to write go.mod: %v", err)
+	}
+
+	// Write test case: function call with sensitive parameter
+	testFile := filepath.Join(tmpDir, "main.go")
+	code := `package main
+
+import "log/slog"
+
+type User struct {
+	Name     string
+	Password string ` + "`sensitive:\"true\"`" + `
+}
+
+func logValue(val string) {
+	slog.Info("data", "value", val)  // Should detect when val is sensitive
+}
+
+func main() {
+	user := User{Name: "alice", Password: "secret123"}
+	password := user.Password
+	logValue(password)  // Pass sensitive value to function
+}
+`
+	if err := os.WriteFile(testFile, []byte(code), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	// Load and analyze
+	cfg := &packages.Config{
+		Mode: packages.NeedName |
+			packages.NeedFiles |
+			packages.NeedCompiledGoFiles |
+			packages.NeedImports |
+			packages.NeedTypes |
+			packages.NeedTypesSizes |
+			packages.NeedSyntax |
+			packages.NeedTypesInfo,
+		Dir: tmpDir,
+	}
+
+	pkgs, err := packages.Load(cfg, ".")
+	if err != nil {
+		t.Fatalf("Failed to load package: %v", err)
+	}
+
+	if len(pkgs) == 0 || len(pkgs[0].Errors) > 0 {
+		t.Fatalf("Package load failed")
+	}
+
+	prog, ssaPkgs := ssautil.AllPackages(pkgs, 0)
+	prog.Build()
+
+	if len(ssaPkgs) == 0 {
+		t.Fatal("No SSA packages built")
+	}
+
+	analyzer := leakhoundssa.NewSSAAnalyzer(prog, pkgs[0].Fset)
+	analyzer.Analyze()
+
+	findings := analyzer.GetFindings()
+
+	// We expect 1 finding in logValue function
+	if len(findings) != 1 {
+		t.Errorf("Expected 1 finding, got %d", len(findings))
+		for i, f := range findings {
+			t.Logf("Finding %d: %s (rule: %s)", i, f.Message, f.RuleID)
+		}
+		return
+	}
+
+	finding := findings[0]
+	if finding.RuleID != "sensitive-field" {
+		t.Errorf("Expected rule ID 'sensitive-field', got %q", finding.RuleID)
+	}
+
+	t.Log("✅ Successfully detected sensitive data through function call propagation!")
+}
