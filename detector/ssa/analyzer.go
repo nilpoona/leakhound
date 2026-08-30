@@ -40,6 +40,10 @@ func (sa *SSAAnalyzer) Analyze() {
 	// Phase 3: Propagate sensitivity through function calls
 	// SSA provides explicit call graph, making this more precise than AST
 	sa.propagateThroughCalls()
+
+	// Phase 4: Detect LH0006 violations (sensitive args to sink parameters in cross-package calls)
+	// This must happen after all sink parameters have been identified
+	sa.detectCrossPackageSinkViolations()
 }
 
 // collectSensitiveFields scans all types in the program for sensitive:"true" tags.
@@ -256,6 +260,10 @@ func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 	if sa.isLogCall(instr) {
 		// This is a logging call - check all arguments for sensitive data
 		for _, arg := range instr.Call.Args {
+			// Mark any parameter that flows into this log call as a sink
+			// TODO: This needs more sophisticated tracking for variadic arguments (Phase 5)
+			sa.markSinkParameter(arg)
+
 			if source := sa.GetSource(arg); source != nil {
 				// Found sensitive data being logged!
 				message := "sensitive field \"" + source.TypeName + "." + source.FieldName +
@@ -286,16 +294,26 @@ func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 			FlowPath:  []string{"function-return"},
 		}
 		sa.MarkSensitive(instr, source)
+
+		// Determine if this is a cross-package call for proper rule ID
+		caller := instr.Parent()
+		if caller.Pkg != nil && callee.Pkg != nil && caller.Pkg != callee.Pkg {
+			// Cross-package call - this is LH0005
+			ruleID := RuleIDCrossPkgSensitiveReturn
+			message := "cross-package function call returns sensitive field \"" + source.FieldName +
+				"\" (callee in \"" + callee.Pkg.Pkg.Path() + "\")"
+			sa.addFinding(instr.Pos(), message, ruleID, source)
+		}
 	}
 
 	// Only propagate arguments to parameters for same-package functions (we have their SSA bodies)
 	if callee.Pkg == nil || callee.Pkg != sa.prog.Package(callee.Pkg.Pkg) {
 		// External package or builtin - skip parameter propagation
-		// (but we still checked return value above)
+		// Note: LH0006 detection happens in a separate phase after all sinks are identified
 		return
 	}
 
-	// Propagate sensitivity from arguments to parameters
+	// Propagate sensitivity from arguments to parameters for same-package functions
 	for i, arg := range instr.Call.Args {
 		if source := sa.GetSource(arg); source != nil {
 			// This argument is sensitive
@@ -336,11 +354,141 @@ func (sa *SSAAnalyzer) analyzePhi(instr *ssa.Phi) {
 	}
 }
 
+// markSinkParameter traces an SSA value back to see if it originates from a parameter.
+// If so, marks that parameter as a sink.
+func (sa *SSAAnalyzer) markSinkParameter(val ssa.Value) {
+	// Handle nil
+	if val == nil {
+		return
+	}
+
+	// Direct parameter
+	if param, ok := val.(*ssa.Parameter); ok {
+		sa.sinkParams[param] = true
+		return
+	}
+
+	// Check for values that wrap or derive from parameters
+	switch v := val.(type) {
+	case *ssa.UnOp:
+		// Dereference or address-of operation
+		sa.markSinkParameter(v.X)
+	case *ssa.MakeInterface:
+		// Interface conversion
+		sa.markSinkParameter(v.X)
+	case *ssa.ChangeType:
+		// Type conversion
+		sa.markSinkParameter(v.X)
+	case *ssa.ChangeInterface:
+		// Interface type change
+		sa.markSinkParameter(v.X)
+	case *ssa.Convert:
+		// Type conversion
+		sa.markSinkParameter(v.X)
+	case *ssa.Phi:
+		// Control flow merge - check all edges
+		for _, edge := range v.Edges {
+			sa.markSinkParameter(edge)
+		}
+	case *ssa.Extract:
+		// Extract from tuple - check the tuple
+		sa.markSinkParameter(v.Tuple)
+	case *ssa.Slice:
+		// Slice operation - check the underlying array/slice
+		sa.markSinkParameter(v.X)
+	case *ssa.MakeSlice:
+		// Making a slice for variadic arguments - check the operands
+		// Actually, MakeSlice doesn't have operands, the elements are added separately
+		// We need to handle this differently
+	case *ssa.IndexAddr:
+		// Index address - check the array/slice
+		sa.markSinkParameter(v.X)
+	case *ssa.Index:
+		// Index operation - check the array/slice
+		sa.markSinkParameter(v.X)
+	case *ssa.Lookup:
+		// Map lookup - check the map
+		sa.markSinkParameter(v.X)
+	case *ssa.Field:
+		// Field access - check the struct
+		sa.markSinkParameter(v.X)
+	case *ssa.FieldAddr:
+		// Field address - check the struct pointer
+		sa.markSinkParameter(v.X)
+	}
+	// For other types (alloc, calls, etc.), we can't trace back to a parameter
+}
+
 // propagateThroughCalls propagates sensitivity through function calls.
 // This will be implemented in a later phase.
 func (sa *SSAAnalyzer) propagateThroughCalls() {
 	// TODO: Implement in next phase
 	// Use SSA's call graph for precise propagation
+}
+
+// detectCrossPackageSinkViolations scans all cross-package function calls
+// to detect when sensitive arguments are passed to sink parameters (LH0006).
+// This must run after all sink parameters have been identified.
+func (sa *SSAAnalyzer) detectCrossPackageSinkViolations() {
+	// Scan all functions in the program
+	for _, pkg := range sa.prog.AllPackages() {
+		for _, member := range pkg.Members {
+			fn, ok := member.(*ssa.Function)
+			if !ok || fn.Blocks == nil {
+				continue
+			}
+
+			// Scan all call instructions in this function
+			for _, block := range fn.Blocks {
+				for _, instr := range block.Instrs {
+					call, ok := instr.(*ssa.Call)
+					if !ok {
+						continue
+					}
+
+					// Get the called function
+					callee := call.Call.StaticCallee()
+					if callee == nil || callee.Pkg == nil {
+						continue
+					}
+
+					// Check if this is a cross-package call
+					caller := call.Parent()
+					if caller.Pkg == nil || caller.Pkg == callee.Pkg {
+						// Same package or no package info - skip
+						continue
+					}
+
+					// This is a cross-package call
+					// Check each argument for sensitivity + sink combination
+					for i, arg := range call.Call.Args {
+						source := sa.GetSource(arg)
+						if source == nil {
+							// Argument is not sensitive
+							continue
+						}
+
+						// Check if the corresponding parameter is a sink
+						if i >= len(callee.Params) {
+							continue
+						}
+						param := callee.Params[i]
+						if !sa.sinkParams[param] {
+							// Parameter is not a sink
+							continue
+						}
+
+						// Found LH0006: sensitive argument passed to sink parameter
+						ruleID := RuleIDCrossPkgSensitiveSink
+						message := "sensitive field \"" + source.TypeName + "." + source.FieldName +
+							"\" is passed to sink parameter in cross-package function (callee in \"" +
+							callee.Pkg.Pkg.Path() + "\")"
+						sa.addFinding(arg.Pos(), message, ruleID, source)
+					}
+				}
+			}
+		}
+	}
 }
 
 // isFieldSensitive checks if a field is marked as sensitive.
