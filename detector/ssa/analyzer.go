@@ -249,7 +249,8 @@ func (sa *SSAAnalyzer) analyzeStore(instr *ssa.Store) {
 
 // analyzeCall handles function calls.
 // This checks if the call is to a logging function and if any arguments are sensitive.
-// For non-logging calls, it propagates sensitivity from arguments to parameters.
+// For non-logging calls, it propagates sensitivity from arguments to parameters and
+// checks if the callee returns sensitive data.
 func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 	// Check if this is a logging function call
 	if sa.isLogCall(instr) {
@@ -265,7 +266,7 @@ func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 		return
 	}
 
-	// Not a logging call - propagate sensitivity from arguments to parameters
+	// Not a logging call - check for sensitive return values and parameter propagation
 	callee := instr.Call.StaticCallee()
 	if callee == nil {
 		// Dynamic call (interface method, function pointer, etc.)
@@ -273,9 +274,24 @@ func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 		return
 	}
 
-	// Only propagate for same-package functions (we have their SSA bodies)
+	// Check if the callee returns sensitive data
+	if sa.sensitiveFuncs[callee] {
+		// The return value is sensitive
+		// Mark the call instruction result as sensitive
+		// TODO: For now, use a generic source; we should track which return position
+		source := &SensitiveSource{
+			FieldName: "return value",
+			TypeName:  callee.Name(),
+			Pos:       instr.Pos(),
+			FlowPath:  []string{"function-return"},
+		}
+		sa.MarkSensitive(instr, source)
+	}
+
+	// Only propagate arguments to parameters for same-package functions (we have their SSA bodies)
 	if callee.Pkg == nil || callee.Pkg != sa.prog.Package(callee.Pkg.Pkg) {
-		// External package or builtin - skip for now
+		// External package or builtin - skip parameter propagation
+		// (but we still checked return value above)
 		return
 	}
 
