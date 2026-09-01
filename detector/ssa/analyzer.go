@@ -261,7 +261,6 @@ func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 		// This is a logging call - check all arguments for sensitive data
 		for _, arg := range instr.Call.Args {
 			// Mark any parameter that flows into this log call as a sink
-			// TODO: This needs more sophisticated tracking for variadic arguments (Phase 5)
 			sa.markSinkParameter(arg)
 
 			if source := sa.GetSource(arg); source != nil {
@@ -271,6 +270,11 @@ func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 				sa.addFinding(instr.Pos(), message, "sensitive-field", source)
 			}
 		}
+
+		// Also mark function parameters as sinks if they flow into this log call
+		// This handles variadic arguments and other indirect flows
+		sa.markSinkParametersViaReferrers(instr)
+
 		return
 	}
 
@@ -417,6 +421,102 @@ func (sa *SSAAnalyzer) markSinkParameter(val ssa.Value) {
 		sa.markSinkParameter(v.X)
 	}
 	// For other types (alloc, calls, etc.), we can't trace back to a parameter
+}
+
+// markSinkParametersViaReferrers marks function parameters as sinks if they
+// flow into the given log call through any path (including variadic packing).
+// This is a referrer-based approach that handles cases where markSinkParameter
+// can't trace backwards through complex SSA constructs.
+func (sa *SSAAnalyzer) markSinkParametersViaReferrers(logCall *ssa.Call) {
+	fn := logCall.Parent()
+	if fn == nil {
+		return
+	}
+
+	// Get all parameters of the enclosing function
+	params := fn.Params
+	if len(params) == 0 {
+		return
+	}
+
+	// Build a set of all values used by this log call (arguments)
+	logArgs := make(map[ssa.Value]bool)
+	for _, arg := range logCall.Call.Args {
+		logArgs[arg] = true
+	}
+
+	// For each parameter, check if it (or values derived from it) flows into the log call
+	for _, param := range params {
+		if sa.paramFlowsToValues(param, logArgs) {
+			sa.sinkParams[param] = true
+		}
+	}
+}
+
+// paramFlowsToValues checks if a parameter (or values derived from it) reaches
+// any of the target values. Uses BFS through referrers.
+func (sa *SSAAnalyzer) paramFlowsToValues(param *ssa.Parameter, targets map[ssa.Value]bool) bool {
+	// BFS through referrers to see if param reaches any target
+	visited := make(map[ssa.Value]bool)
+	queue := []ssa.Value{param}
+	visited[param] = true
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		// Check if this value is a target
+		if targets[current] {
+			return true
+		}
+
+		// Get referrers (instructions that use this value)
+		refs := current.Referrers()
+		if refs == nil {
+			continue
+		}
+
+		for _, ref := range *refs {
+			// If the referrer produces a new value, add it to the queue
+			if val, ok := ref.(ssa.Value); ok {
+				if !visited[val] {
+					visited[val] = true
+					queue = append(queue, val)
+				}
+			}
+
+			// Special case: Store instruction stores a value into memory
+			// We need to track values that derive from the stored location
+			if store, ok := ref.(*ssa.Store); ok {
+				// store.Addr is where the value is stored
+				addr := store.Addr
+
+				// If addr is an IndexAddr (e.g., &arr[i]), track the base array/slice
+				if indexAddr, ok := addr.(*ssa.IndexAddr); ok {
+					base := indexAddr.X
+					if !visited[base] {
+						visited[base] = true
+						queue = append(queue, base)
+					}
+				}
+
+				// Also track any values that reference this address
+				if addrRefs := addr.Referrers(); addrRefs != nil {
+					for _, addrRef := range *addrRefs {
+						// Look for values derived from this address (e.g., Slice, Index)
+						if derivedVal, ok := addrRef.(ssa.Value); ok {
+							if !visited[derivedVal] {
+								visited[derivedVal] = true
+								queue = append(queue, derivedVal)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // propagateThroughCalls propagates sensitivity through function calls.

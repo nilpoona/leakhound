@@ -234,19 +234,6 @@ func main() {
 	analyzer := leakhoundssa.NewSSAAnalyzer(prog, pkgs[0].Fset)
 	analyzer.Analyze()
 
-	// Debug: Check sink parameters
-	t.Logf("Sink parameters identified: %d", analyzer.DebugSinkParamsCount())
-	t.Logf("Sensitive values tracked: %d", analyzer.DebugSensitiveValuesCount())
-	sinks := analyzer.DebugPrintSinkParams()
-	for key, val := range sinks {
-		t.Logf("Sink param: %s = %s", key, val)
-	}
-	logCalls := analyzer.DebugPrintLogCalls()
-	t.Logf("Log calls detected: %d", len(logCalls))
-	for _, call := range logCalls {
-		t.Logf("Log call: %s", call)
-	}
-
 	findings := analyzer.GetFindings()
 
 	// We expect at least 1 finding with rule ID "cross-pkg-sensitive-sink" (LH0006)
@@ -257,9 +244,6 @@ func main() {
 	}
 
 	// Check for LH0006
-	// TODO: LH0006 detection requires more sophisticated sink parameter tracking
-	// through variadic argument unpacking and SSA data flow. This will be implemented
-	// in Phase 5.
 	hasLH0006 := false
 	for _, f := range findings {
 		t.Logf("Found: rule=%s, message=%s", f.RuleID, f.Message)
@@ -268,9 +252,9 @@ func main() {
 		}
 	}
 
-	if hasLH0006 {
-		t.Log("✅ Successfully detected cross-package sensitive sink with LH0006!")
+	if !hasLH0006 {
+		t.Error("Expected to find LH0006 (cross-pkg-sensitive-sink)")
 	} else {
-		t.Log("⚠️  LH0006 not yet implemented - requires variadic argument tracking (Phase 5)")
+		t.Log("✅ Successfully detected cross-package sensitive sink with LH0006!")
 	}
 }

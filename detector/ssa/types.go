@@ -163,67 +163,6 @@ func (sa *SSAAnalyzer) DebugLogCallsCount() int {
 	return count
 }
 
-// DebugSinkParamsCount returns the number of sink parameters identified.
-// This is for testing/debugging purposes only.
-func (sa *SSAAnalyzer) DebugSinkParamsCount() int {
-	return len(sa.sinkParams)
-}
-
-// DebugPrintSinkParams prints all sink parameters for debugging.
-// This is for testing/debugging purposes only.
-func (sa *SSAAnalyzer) DebugPrintSinkParams() map[string]string {
-	result := make(map[string]string)
-	for param := range sa.sinkParams {
-		fn := param.Parent()
-		pkgPath := ""
-		if fn.Pkg != nil && fn.Pkg.Pkg != nil {
-			pkgPath = fn.Pkg.Pkg.Path()
-		}
-		key := pkgPath + "." + fn.Name() + ":" + param.Name()
-		result[key] = param.String()
-	}
-	return result
-}
-
-// DebugPrintLogCalls prints all detected log calls for debugging.
-// This is for testing/debugging purposes only.
-func (sa *SSAAnalyzer) DebugPrintLogCalls() []string {
-	var calls []string
-	for _, pkg := range sa.prog.AllPackages() {
-		for _, member := range pkg.Members {
-			fn, ok := member.(*ssa.Function)
-			if !ok || fn.Blocks == nil {
-				continue
-			}
-			for _, block := range fn.Blocks {
-				for _, instr := range block.Instrs {
-					call, ok := instr.(*ssa.Call)
-					if !ok {
-						continue
-					}
-					if sa.isLogCall(call) {
-						callee := call.Call.StaticCallee()
-						callerPkg := ""
-						if fn.Pkg != nil && fn.Pkg.Pkg != nil {
-							callerPkg = fn.Pkg.Pkg.Path()
-						}
-						calleePkg := ""
-						if callee != nil && callee.Pkg != nil && callee.Pkg.Pkg != nil {
-							calleePkg = callee.Pkg.Pkg.Path()
-						}
-						calleeName := ""
-						if callee != nil {
-							calleeName = callee.Name()
-						}
-						calls = append(calls, callerPkg+"."+fn.Name()+" calls "+calleePkg+"."+calleeName)
-					}
-				}
-			}
-		}
-	}
-	return calls
-}
-
 // isLogCall checks if an SSA call is to a logging function (exposed for debugging).
 func (sa *SSAAnalyzer) isLogCall(call *ssa.Call) bool {
 	callee := call.Call.StaticCallee()
