@@ -390,9 +390,10 @@ func (sa *SSAAnalyzer) analyzePhi(instr *ssa.Phi) {
 // analyzeExtract handles tuple extraction (multi-value returns).
 // SSA represents multi-value returns as tuples, and Extract extracts one value.
 // Example: pw, err := f() becomes:
-//   t0 = f()           (Call returns tuple)
-//   t1 = Extract [0] t0  (extract position 0 -> pw)
-//   t2 = Extract [1] t0  (extract position 1 -> err)
+//
+//	t0 = f()           (Call returns tuple)
+//	t1 = Extract [0] t0  (extract position 0 -> pw)
+//	t2 = Extract [1] t0  (extract position 1 -> err)
 func (sa *SSAAnalyzer) analyzeExtract(instr *ssa.Extract) {
 	// Get the tuple (usually a Call instruction)
 	tuple := instr.Tuple
