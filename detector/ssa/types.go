@@ -45,6 +45,11 @@ type SSAAnalyzer struct {
 	// sensitiveFuncs tracks functions that return sensitive data
 	sensitiveFuncs map[*ssa.Function]bool
 
+	// sensitiveFuncPos tracks specific return positions for multi-value returns
+	// Key: sensitiveReturnKey{function, index}
+	// Value: SensitiveSource for that return position
+	sensitiveFuncPos map[sensitiveReturnKey]*SensitiveSource
+
 	// sinkParams tracks parameters that are logged (directly or transitively)
 	// Key: *ssa.Parameter
 	// Value: true if the parameter flows into a logging call
@@ -63,16 +68,24 @@ type sensitiveField struct {
 	fieldName string
 }
 
+// sensitiveReturnKey identifies a specific return position of a function.
+// Used to track multi-value returns like (string, error) where only position 0 is sensitive.
+type sensitiveReturnKey struct {
+	function *ssa.Function
+	index    int
+}
+
 // NewSSAAnalyzer creates a new SSA-based data flow analyzer.
 func NewSSAAnalyzer(prog *ssa.Program, fset *token.FileSet) *SSAAnalyzer {
 	return &SSAAnalyzer{
-		prog:            prog,
-		sensitiveValues: make(map[ssa.Value]*SensitiveSource),
-		sensitiveFields: make(map[sensitiveField]bool),
-		sensitiveFuncs:  make(map[*ssa.Function]bool),
-		sinkParams:      make(map[*ssa.Parameter]bool),
-		findings:        make([]*Finding, 0),
-		fset:            fset,
+		prog:             prog,
+		sensitiveValues:  make(map[ssa.Value]*SensitiveSource),
+		sensitiveFields:  make(map[sensitiveField]bool),
+		sensitiveFuncs:   make(map[*ssa.Function]bool),
+		sensitiveFuncPos: make(map[sensitiveReturnKey]*SensitiveSource),
+		sinkParams:       make(map[*ssa.Parameter]bool),
+		findings:         make([]*Finding, 0),
+		fset:             fset,
 	}
 }
 

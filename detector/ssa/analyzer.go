@@ -15,10 +15,11 @@ func (sa *SSAAnalyzer) Analyze() {
 	sa.collectSensitiveFields()
 
 	// Phase 2: Iterative data flow analysis
-	// Repeat analysis until no new sensitive values are discovered
+	// Repeat analysis until no new sensitive values or sink parameters are discovered
 	const maxIterations = 5
 	for iteration := 0; iteration < maxIterations; iteration++ {
-		prevCount := len(sa.sensitiveValues)
+		prevSensitiveCount := len(sa.sensitiveValues)
+		prevSinkCount := len(sa.sinkParams)
 
 		// Analyze all functions in the program
 		for _, pkg := range sa.prog.AllPackages() {
@@ -29,10 +30,11 @@ func (sa *SSAAnalyzer) Analyze() {
 			}
 		}
 
-		// Check if we discovered new sensitive values
-		newCount := len(sa.sensitiveValues)
-		if newCount == prevCount {
-			// Converged - no new sensitive values discovered
+		// Check if we discovered new sensitive values or sink parameters
+		newSensitiveCount := len(sa.sensitiveValues)
+		newSinkCount := len(sa.sinkParams)
+		if newSensitiveCount == prevSensitiveCount && newSinkCount == prevSinkCount {
+			// Converged - no new sensitive values or sinks discovered
 			break
 		}
 	}
@@ -140,6 +142,9 @@ func (sa *SSAAnalyzer) analyzeInstruction(instr ssa.Instruction) {
 	case *ssa.Phi:
 		// Phi node (control flow merge)
 		sa.analyzePhi(instr)
+	case *ssa.Extract:
+		// Extract value from tuple (multi-value return)
+		sa.analyzeExtract(instr)
 	}
 }
 
@@ -328,18 +333,42 @@ func (sa *SSAAnalyzer) analyzeCall(instr *ssa.Call) {
 			}
 		}
 	}
+
+	// Backward propagation: if callee's parameter is a sink, trace back from argument
+	// to mark caller's parameter as sink too (transitive sink propagation)
+	for i, arg := range instr.Call.Args {
+		if i < len(callee.Params) {
+			calleeParam := callee.Params[i]
+			if sa.sinkParams[calleeParam] {
+				// The callee's parameter is a sink
+				// Trace back from this argument to mark the caller's parameter as sink
+				sa.markSinkParameter(arg)
+			}
+		}
+	}
 }
 
 // isLogCall is now defined in types.go for reuse in debugging methods
 
 // analyzeReturn handles return statements.
 // If a returned value is sensitive, mark the function as returning sensitive data.
+// For multi-value returns, track each position separately.
 func (sa *SSAAnalyzer) analyzeReturn(instr *ssa.Return) {
 	fn := instr.Parent()
-	for _, result := range instr.Results {
-		if sa.IsSensitive(result) {
+
+	// For single-value returns, use the simple map
+	if len(instr.Results) == 1 {
+		if source := sa.GetSource(instr.Results[0]); source != nil {
 			sa.sensitiveFuncs[fn] = true
-			return
+		}
+		return
+	}
+
+	// For multi-value returns, track each position separately
+	for i, result := range instr.Results {
+		if source := sa.GetSource(result); source != nil {
+			key := sensitiveReturnKey{function: fn, index: i}
+			sa.sensitiveFuncPos[key] = source
 		}
 	}
 }
@@ -354,6 +383,32 @@ func (sa *SSAAnalyzer) analyzePhi(instr *ssa.Phi) {
 			// Phi result is sensitive
 			sa.MarkSensitive(instr, source)
 			return
+		}
+	}
+}
+
+// analyzeExtract handles tuple extraction (multi-value returns).
+// SSA represents multi-value returns as tuples, and Extract extracts one value.
+// Example: pw, err := f() becomes:
+//   t0 = f()           (Call returns tuple)
+//   t1 = Extract [0] t0  (extract position 0 -> pw)
+//   t2 = Extract [1] t0  (extract position 1 -> err)
+func (sa *SSAAnalyzer) analyzeExtract(instr *ssa.Extract) {
+	// Get the tuple (usually a Call instruction)
+	tuple := instr.Tuple
+
+	// Check if this is extracting from a function call
+	if call, ok := tuple.(*ssa.Call); ok {
+		callee := call.Call.StaticCallee()
+		if callee == nil {
+			return
+		}
+
+		// Check if this specific return position is sensitive
+		key := sensitiveReturnKey{function: callee, index: instr.Index}
+		if source, found := sa.sensitiveFuncPos[key]; found {
+			// This return position is sensitive
+			sa.MarkSensitive(instr, source)
 		}
 	}
 }
