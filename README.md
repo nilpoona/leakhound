@@ -63,9 +63,14 @@ leakhound ./internal/...
 
 # Per-package mode (legacy, no cross-package tracking — useful for go vet style integrations)
 leakhound --single-package ./...
+
+# SSA mode (experimental, more precise flow analysis)
+leakhound --ssa ./...
 ```
 
 By default leakhound runs in **whole-program mode**, loading the target packages plus their transitive dependencies (`packages.Load` with `NeedDeps`) so it can follow sensitive values across import boundaries. Use `--single-package` to fall back to the per-package driver if you need `go vet`-compatible output.
+
+**SSA mode** (`--ssa`) uses Static Single Assignment form for data flow analysis, providing automatic flow-sensitivity where each variable assignment creates a new value. This mode has feature parity with the default AST-based analyzer for cross-package tracking (LH0005/LH0006) and offers more precise analysis of complex data flows.
 
 #### Output Formats
 `leakhound` supports multiple output formats for different use cases:
