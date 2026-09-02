@@ -12,9 +12,11 @@ import (
 	"github.com/nilpoona/leakhound"
 	"github.com/nilpoona/leakhound/config"
 	"github.com/nilpoona/leakhound/detector"
+	"github.com/nilpoona/leakhound/detector/ssa"
 	"github.com/nilpoona/leakhound/reporter/sarif"
 	"golang.org/x/tools/go/analysis/singlechecker"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/ssa/ssautil"
 )
 
 // CLI entry point. The default driver is now the whole-program loader
@@ -27,6 +29,7 @@ func main() {
 	args := os.Args[1:]
 
 	singlePackage := false
+	ssaMode := false
 	format := "text"
 	configPath := ""
 	rest := make([]string, 0, len(args))
@@ -36,6 +39,8 @@ func main() {
 		switch {
 		case a == "--single-package" || a == "-single-package":
 			singlePackage = true
+		case a == "--ssa" || a == "-ssa":
+			ssaMode = true
 		case a == "--format=sarif" || a == "-format=sarif":
 			format = "sarif"
 		case a == "--format=text" || a == "-format=text":
@@ -60,16 +65,24 @@ func main() {
 	}
 
 	if singlePackage {
-		// Restore the original argv (minus --single-package) so the standard
+		// Restore the original argv (minus --single-package and --ssa) so the standard
 		// driver parses --format / --config itself.
-		os.Args = append([]string{os.Args[0]}, filterArgs(args, "--single-package", "-single-package")...)
+		os.Args = append([]string{os.Args[0]}, filterArgs(args, "--single-package", "-single-package", "--ssa", "-ssa")...)
 		singlechecker.Main(leakhound.Analyzer)
 		return
 	}
 
 	if len(rest) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: leakhound [--format=text|sarif] [--config=PATH] [--single-package] <package patterns>")
+		fmt.Fprintln(os.Stderr, "usage: leakhound [--format=text|sarif] [--config=PATH] [--single-package] [--ssa] <package patterns>")
 		os.Exit(1)
+	}
+
+	if ssaMode {
+		if err := runSSA(rest, format, configPath); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if err := runWholeProgram(rest, format, configPath); err != nil {
@@ -129,6 +142,80 @@ func runWholeProgram(patterns []string, format, configPath string) error {
 	wp.Collect()
 	findings := wp.Analyze()
 
+	filter := &detector.SuppressionFilter{}
+	filter.Build(collectFiles(allPkgs), pkgCfg.Fset)
+	findings = filter.Apply(findings, pkgCfg.Fset, &cfg)
+
+	switch format {
+	case "sarif":
+		rep := sarif.NewAggregatingReporter(workDir)
+		rep.AddFindings(findings, pkgCfg.Fset)
+		return rep.Report(os.Stdout)
+	default:
+		emitText(findings, pkgCfg.Fset, workDir)
+		return nil
+	}
+}
+
+// runSSA performs SSA-based whole-program analysis.
+func runSSA(patterns []string, format, configPath string) error {
+	workDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return err
+	}
+
+	pkgCfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedImports | packages.NeedDeps | packages.NeedTypes |
+			packages.NeedTypesSizes | packages.NeedSyntax | packages.NeedTypesInfo,
+		Tests: false,
+		Dir:   workDir,
+		Fset:  token.NewFileSet(),
+	}
+
+	pkgs, err := packages.Load(pkgCfg, patterns...)
+	if err != nil {
+		return fmt.Errorf("failed to load packages: %w", err)
+	}
+
+	// Surface load errors but continue with whatever loaded successfully
+	for _, pkg := range pkgs {
+		for _, perr := range pkg.Errors {
+			fmt.Fprintf(os.Stderr, "%v\n", perr)
+		}
+	}
+
+	allPkgs := flattenWithDeps(pkgs)
+
+	// Build SSA program
+	prog, ssaPkgs := ssautil.AllPackages(allPkgs, 0)
+	prog.Build()
+
+	if len(ssaPkgs) == 0 {
+		return fmt.Errorf("no SSA packages built")
+	}
+
+	// Run SSA analysis
+	analyzer := ssa.NewSSAAnalyzer(prog, pkgCfg.Fset)
+	analyzer.Analyze()
+
+	// Convert SSA findings to detector findings
+	ssaFindings := analyzer.GetFindings()
+	findings := make([]detector.Finding, len(ssaFindings))
+	for i, sf := range ssaFindings {
+		findings[i] = detector.Finding{
+			Pos:     sf.Pos,
+			Message: sf.Message,
+			RuleID:  sf.RuleID,
+		}
+	}
+
+	// Apply suppressions
 	filter := &detector.SuppressionFilter{}
 	filter.Build(collectFiles(allPkgs), pkgCfg.Fset)
 	findings = filter.Apply(findings, pkgCfg.Fset, &cfg)
